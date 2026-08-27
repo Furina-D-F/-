@@ -1,0 +1,11 @@
+[submodule "external/bullet3"]
+	path = external/bullet3
+	url = https://github.com/bulletphysics/bullet3.git
+
+[submodule "firmware/third_party/FreeRTOS-Kernel"]
+	path = firmware/third_party/FreeRTOS-Kernel
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+
+[submodule "simulation/models/ur5-source"]
+	path = simulation/models/ur5-source
+	url = https://github.com/ros-industrial/universal_robot.git
