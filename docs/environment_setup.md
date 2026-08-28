@@ -37,3 +37,7 @@ Python 包安装在项目的 `.venv` 虚拟环境中。
 | Bullet3 | PyBullet 的源码和机器人仿真资源 |
 | UR5 URDF 与网格 | 位于 `simulation/models/ur5/` |
 | ARM GCC 运行库 | 提供裸机编译所需的 ARM 辅助函数 |
+
+## 5. UR5 模型说明
+
+当前使用的 `simulation/models/ur5/ur5.urdf` 已完成人工核对，六个活动关节的顺序、URDF 原点、旋转轴、标准 UR5 DH 几何参数和位置限位均已确认一致。后续运动学推导直接采用 [system_design.md](system_design.md) 中的参数基线，若未来替换 URDF，必须先人工重新核对上述项目。

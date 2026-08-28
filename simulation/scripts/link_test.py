@@ -1,5 +1,7 @@
-import socket
+import pathlib
+import subprocess
 import struct
+import tempfile
 
 from protocol import (
     CMD_STATUS,
@@ -11,35 +13,45 @@ from protocol import (
 )
 
 
+def start_firmware_bridge():
+    project_root = pathlib.Path(__file__).resolve().parents[2]
+    source_files = [
+        project_root / "firmware" / "tests" / "communication_link_host.c",
+        project_root / "firmware" / "drivers" / "protocol.c",
+        project_root / "firmware" / "drivers" / "uart.c",
+    ]
+    with tempfile.TemporaryDirectory() as directory:
+        executable = pathlib.Path(directory) / "communication_link_host"
+        subprocess.run(
+            ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+             "-Ifirmware/drivers", *map(str, source_files), "-o", str(executable)],
+            cwd=project_root,
+            check=True,
+        )
+        return subprocess.Popen(
+            [str(executable)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+
+
 def main():
-    host, firmware = socket.socketpair()
+    firmware = start_firmware_bridge()
     try:
         request = encode(FRAME_COMMAND, 1, CMD_STATUS)
-        host.sendall(request)
-
-        received = bytearray()
-        while len(received) < len(request):
-            received.extend(firmware.recv(64))
-
-        request_parser = FrameParser()
-        request_frame = request_parser.feed(bytes(received))[0]
-        response = encode(
-            FRAME_RESPONSE,
-            request_frame["sequence"],
-            request_frame["command"],
-            STATUS_OK,
-        )
-        firmware.sendall(response)
-
-        response_parser = FrameParser()
-        response_frame = response_parser.feed(host.recv(64))[0]
+        firmware.stdin.write(request)
+        firmware.stdin.flush()
+        response = firmware.stdout.read(len(request))
+        response_frame = FrameParser().feed(response)[0]
         assert response_frame["type"] == FRAME_RESPONSE
         assert response_frame["sequence"] == 1
+        assert response_frame["command"] == CMD_STATUS
         assert response_frame["response_code"] == STATUS_OK
-        print("bidirectional protocol link: PASS")
+        print("python -> embedded C -> python: PASS")
     finally:
-        host.close()
-        firmware.close()
+        firmware.stdin.close()
+        firmware.terminate()
+        firmware.wait()
 
 
 if __name__ == "__main__":

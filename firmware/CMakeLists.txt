@@ -15,6 +15,7 @@ set(FREERTOS_DIR ${CMAKE_SOURCE_DIR}/third_party/FreeRTOS-Kernel)
 
 add_executable(robot_firmware
     app/main.c
+    app/scheduler_validation.c
     bsp/startup.s
     bsp/clock.c
     bsp/gpio.c
