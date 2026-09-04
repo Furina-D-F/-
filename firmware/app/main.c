@@ -5,6 +5,7 @@
 
 #include "clock.h"
 #include "gpio.h"
+#include "qemu_uart.h"
 #include "timer.h"
 #include "communication.h"
 #include "scheduler_validation.h"
@@ -41,6 +42,7 @@ int main(void)
 {
     bsp_clock_init();
     bsp_gpio_init();
+    bsp_qemu_uart_init();
     robot_communication_init(&communication, &communication_rx, &communication_tx);
     scheduler_validation_start();
 

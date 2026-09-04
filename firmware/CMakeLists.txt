@@ -15,11 +15,14 @@ set(FREERTOS_DIR ${CMAKE_SOURCE_DIR}/third_party/FreeRTOS-Kernel)
 
 add_executable(robot_firmware
     app/main.c
+    app/control.c
     app/scheduler_validation.c
     bsp/startup.s
     bsp/clock.c
     bsp/gpio.c
     bsp/timer.c
+    bsp/qemu_uart.c
+    drivers/joint_motor.c
     drivers/protocol.c
     drivers/uart.c
     drivers/communication.c
@@ -42,8 +45,11 @@ target_compile_options(robot_firmware PRIVATE
     -Wextra
 )
 
+target_compile_definitions(robot_firmware PRIVATE ROBOT_QEMU=1)
+
 target_include_directories(robot_firmware PRIVATE
     ${CMAKE_SOURCE_DIR}/config
+    ${CMAKE_SOURCE_DIR}/app
     ${CMAKE_SOURCE_DIR}/bsp
     ${CMAKE_SOURCE_DIR}/drivers
     ${FREERTOS_DIR}/include

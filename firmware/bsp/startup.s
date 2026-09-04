@@ -7,7 +7,7 @@
 .type __isr_vector, %object
 __isr_vector:
     .word __StackTop
-    .word Reset_Handler
+    .word Reset_Handler + 1
     .rept 9
     .word Default_Handler
     .endr

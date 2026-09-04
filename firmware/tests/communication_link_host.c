@@ -1,57 +1,83 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <errno.h>
+#include <sys/select.h>
+#include <unistd.h>
 
-#include "protocol.h"
-#include "uart.h"
+#include "FreeRTOS.h"
+#include "communication.h"
 
-static int send_response(const robot_frame_t *request)
+static TickType_t host_tick;
+
+TickType_t xTaskGetTickCount(void)
 {
-    robot_frame_t response = {
-        .type = ROBOT_FRAME_RESPONSE,
-        .sequence = request->sequence,
-        .command = request->command,
-        .response_code = ROBOT_STATUS_OK,
-        .payload_length = 0U
-    };
-    uint8_t encoded[ROBOT_PROTOCOL_MAX_FRAME];
-    int length = robot_protocol_encode(&response, encoded, sizeof(encoded));
+    return host_tick;
+}
 
-    if (length < 0) {
-        return 1;
+void vTaskDelay(const TickType_t ticks)
+{
+    (void) ticks;
+}
+
+static int flush_tx(robot_uart_tx_ring_t *tx)
+{
+    uint8_t byte;
+
+    while (robot_uart_tx_read(tx, &byte) == ROBOT_UART_OK) {
+        if (fwrite(&byte, 1U, 1U, stdout) != 1U) {
+            return 1;
+        }
     }
-
-    return fwrite(encoded, 1U, (size_t) length, stdout) == (size_t) length ? 0 : 1;
+    fflush(stdout);
+    return 0;
 }
 
 int main(void)
 {
     robot_uart_rx_ring_t rx;
-    robot_protocol_parser_t parser;
-    robot_frame_t frame;
-    robot_uart_init(&rx);
-    robot_protocol_parser_init(&parser);
+    robot_uart_tx_ring_t tx;
+    robot_communication_t communication;
+    struct timeval timeout;
+    fd_set input_set;
+
+    host_tick = 0U;
+    robot_communication_init(&communication, &rx, &tx);
 
     for (;;) {
-        int input = fgetc(stdin);
-        if (input == EOF) {
-            return ferror(stdin) != 0 ? 1 : 0;
+        FD_ZERO(&input_set);
+        FD_SET(STDIN_FILENO, &input_set);
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 10000;
+        int ready = select(STDIN_FILENO + 1, &input_set, NULL, NULL, &timeout);
+        if (ready < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return 1;
+        }
+        if (ready == 0) {
+            host_tick += pdMS_TO_TICKS(10U);
+            robot_communication_poll(&communication, host_tick);
+            robot_control_update(0.01f);
+            continue;
         }
 
-        if (robot_uart_rx_isr_push(&rx, (uint8_t) input) != ROBOT_UART_OK) {
+        uint8_t input;
+        ssize_t bytes_read = read(STDIN_FILENO, &input, sizeof(input));
+        if (bytes_read == 0) {
+            return 0;
+        }
+        if (bytes_read < 0) {
+            return errno == EINTR ? 0 : 1;
+        }
+
+        if (robot_uart_rx_isr_push(&rx, input) != ROBOT_UART_OK) {
             return 1;
         }
 
-        uint8_t byte;
-        while (robot_uart_read(&rx, &byte) == ROBOT_UART_OK) {
-            robot_protocol_result_t result = robot_protocol_parser_feed(
-                &parser, byte, 0U, &frame
-            );
-            if (result == ROBOT_PROTOCOL_FRAME_READY) {
-                if (send_response(&frame) != 0) {
-                    return 1;
-                }
-                fflush(stdout);
-            }
+        robot_communication_poll(&communication, host_tick);
+        if (flush_tx(&tx) != 0) {
+            return 1;
         }
     }
 }

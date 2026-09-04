@@ -19,6 +19,7 @@
 | Ninja | 1.10.1 | 固件构建 |
 | QEMU | 6.2.0 | Cortex-M4 仿真 |
 | `gdb-multiarch` | 12.1 | ARM 固件调试 |
+| Unity | 2.7.0-14-g2b67b99 | C 驱动模块单元测试 |
 
 ## 3. Python 包
 
@@ -37,7 +38,8 @@ Python 包安装在项目的 `.venv` 虚拟环境中。
 | Bullet3 | PyBullet 的源码和机器人仿真资源 |
 | UR5 URDF 与网格 | 位于 `simulation/models/ur5/` |
 | ARM GCC 运行库 | 提供裸机编译所需的 ARM 辅助函数 |
+| Unity | 位于 `firmware/third_party/Unity/`，用于 native host 单元测试 |
 
 ## 5. UR5 模型说明
 
-当前使用的 `simulation/models/ur5/ur5.urdf` 已完成人工核对，六个活动关节的顺序、URDF 原点、旋转轴、标准 UR5 DH 几何参数和位置限位均已确认一致。后续运动学推导直接采用 [system_design.md](system_design.md) 中的参数基线，若未来替换 URDF，必须先人工重新核对上述项目。
+当前使用的 `simulation/models/ur5/ur5.urdf` 已完成人工核对，六个活动关节的顺序、URDF 原点、旋转轴、名义 UR5 DH 几何参数和位置限位均已确认与仓库内 UR5 配置一致。运动学定义、坐标系和 8 组逆解规则见 [system_design.md](system_design.md)。

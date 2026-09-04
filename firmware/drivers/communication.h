@@ -5,6 +5,7 @@
 
 #include "protocol.h"
 #include "uart.h"
+#include "control.h"
 
 typedef struct {
     robot_uart_rx_ring_t *rx;
