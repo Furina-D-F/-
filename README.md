@@ -2,7 +2,7 @@
 
 ## 1. 更新日志
 
-- v1.2 六路关节实例化，[驱动抽象](firmware/drivers/joint_motor.c)，新增QEMU[仿真串口驱动](firmware/bsp/qemu_uart.c)，完成Python客户端到QEMU仿真到FreeRTOS固件的串口通信链路，新增[Python CLI](simulation/scripts/robot_cli.py)，直接连接到固件，并通过指令实现机器人运动（Pybullet可视化已实现），支持通信帧实时返回机器人状态；接入unity测试框架，设计包含UART，协议解析，电机驱动接口编写覆盖正常功能，边界参数异常等共16个单元测试用例，测试全部通过，具体[测试报告](docs/test_report.md)；初步推导UR5 DH参数，坐标体系变换方法，运动学，八解等，具体查看[docs/test_report.md](docs/test_report.md)
+- v1.2 六路关节实例化，[驱动抽象](firmware/drivers/joint_motor.c)，新增QEMU[仿真串口驱动](firmware/bsp/qemu_uart.c)，完成Python客户端到QEMU仿真到FreeRTOS固件的串口通信链路，新增[Python CLI](simulation/scripts/robot_cli.py)，直接连接到固件，并通过指令实现机器人运动（Pybullet可视化已实现），支持通信帧实时返回机器人状态；接入unity测试框架，设计包含UART，协议解析，电机驱动接口编写覆盖正常功能，边界参数异常等共16个单元测试用例，测试全部通过，具体[测试报告](docs/test_report.md)；初步推导UR5 DH参数，坐标体系变换方法，运动学，八解等，具体查看[docs/kinematics.md](docs/kinematics.md)
 - v1.1 更新[技术文档](docs/system_design.md)明确各层功能边界，接口定义，I/O约束和返回值，明确通信层数据结构，返回的错误码；增加了多任务调度验证[代码](firmware/app/scheduler_validation.c)；实现了python到仿真端的双向通信验证[代码](firmware/tests/communication_link_host.c)
 - v1.0 基础的环境配置和仿真实现，编写技术文档，设计通信协议，驱动抽象。
 
