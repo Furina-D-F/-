@@ -9,3 +9,6 @@
 [submodule "simulation/models/ur5-source"]
 	path = simulation/models/ur5-source
 	url = https://github.com/ros-industrial/universal_robot.git
+[submodule "firmware/third_party/Unity"]
+	path = firmware/third_party/Unity
+	url = https://github.com/ThrowTheSwitch/Unity.git
