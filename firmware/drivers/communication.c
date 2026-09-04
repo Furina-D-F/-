@@ -9,13 +9,18 @@
 
 static uint8_t map_app_result(robot_app_result_t result)
 {
-    if (result == ROBOT_APP_OK) {
+    switch (result) {
+    case ROBOT_APP_OK:
         return ROBOT_STATUS_OK;
+    case ROBOT_APP_INVALID_ARGUMENT:
+        return ROBOT_STATUS_INVALID_ARGUMENT;
+    case ROBOT_APP_INVALID_STATE:
+        return ROBOT_STATUS_INVALID_STATE;
+    case ROBOT_APP_LIMIT:
+        return ROBOT_STATUS_LIMIT;
+    default:
+        return ROBOT_STATUS_BAD_COMMAND;
     }
-    if (result == ROBOT_APP_INVALID_ARGUMENT || result == ROBOT_APP_LIMIT) {
-        return ROBOT_STATUS_BAD_LENGTH;
-    }
-    return ROBOT_STATUS_BAD_COMMAND;
 }
 
 static void copy_bytes(uint8_t *destination, const uint8_t *source, uint16_t length)

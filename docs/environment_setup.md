@@ -19,7 +19,7 @@
 | Ninja | 1.10.1 | 固件构建 |
 | QEMU | 6.2.0 | Cortex-M4 仿真 |
 | `gdb-multiarch` | 12.1 | ARM 固件调试 |
-| Unity | 2.7.0-14-g2b67b99 | C 驱动模块单元测试 |
+| Unity | 2.7.2，submodule commit `2b67b99` | C 驱动模块 native 和 ARM/QEMU 单元测试 |
 
 ## 3. Python 包
 
@@ -30,6 +30,15 @@
 
 Python 包安装在项目的 `.venv` 虚拟环境中。
 
+初始化仓库依赖：
+
+```bash
+git submodule update --init --recursive
+```
+
+Unity 通过 `firmware/third_party/Unity` submodule 引入；FreeRTOS 位于
+`firmware/third_party/FreeRTOS-Kernel`，Bullet3 位于 `external/bullet3`。
+
 ## 4. 项目依赖
 
 | 依赖 | 说明 |
@@ -38,7 +47,7 @@ Python 包安装在项目的 `.venv` 虚拟环境中。
 | Bullet3 | PyBullet 的源码和机器人仿真资源 |
 | UR5 URDF 与网格 | 位于 `simulation/models/ur5/` |
 | ARM GCC 运行库 | 提供裸机编译所需的 ARM 辅助函数 |
-| Unity | 位于 `firmware/third_party/Unity/`，用于 native host 单元测试 |
+| Unity | 位于 `firmware/third_party/Unity/`，通过 Git submodule 引入，用于 native host 和 ARM/QEMU 单元测试 |
 
 ## 5. UR5 模型说明
 

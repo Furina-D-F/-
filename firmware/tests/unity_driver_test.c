@@ -268,7 +268,7 @@ void test_motor_rejects_invalid_parameters_and_time(void)
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, state.position_rad);
 }
 
-int main(void)
+int robot_unity_run_all(void)
 {
     UnityBegin("unity_driver_test.c");
     RUN_TEST(test_uart_rx_initializes_empty);
@@ -289,3 +289,10 @@ int main(void)
     RUN_TEST(test_motor_rejects_invalid_parameters_and_time);
     return UnityEnd();
 }
+
+#ifndef ROBOT_QEMU_UNITY_TEST
+int main(void)
+{
+    return robot_unity_run_all();
+}
+#endif

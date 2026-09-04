@@ -30,7 +30,7 @@ PyBullet 仿真端
 
 依赖方向固定为“上层调用下层”：仿真端通过通信层交互，应用层调用通信层和算法层，算法层调用驱动抽象层中的关节电机接口，驱动抽象层不得调用应用层或算法层。通信层只负责字节流、帧和协议错误，不直接修改关节目标；应用层是唯一的命令解释和系统状态机入口。
 
-跨任务数据应通过结构体复制、FreeRTOS 队列或互斥量保护的共享对象传递，不跨层暴露 FreeRTOS 类型。当前实现尚未引入命令/状态队列或互斥量；调用者必须保证初始化对象指针有效，已实现的输出接口会检查 NULL 输出指针。接口返回值只表示调用结果，业务状态通过输出结构体或响应码返回。
+跨任务数据应通过结构体复制、FreeRTOS 队列或互斥量保护的共享对象传递，不跨层暴露 FreeRTOS 类型。当前实现采用控制模块内部的 FreeRTOS mutex 保护 `control_status` 及关节模型：`robot_control_handle_motion()`、`robot_control_stop()`、`robot_control_update()` 和 `robot_control_get_status()` 均在访问期间持锁；mutex 在 `robot_control_init()` 阶段创建，创建失败由 `configASSERT` 终止启动，避免退化为无保护访问。调用者必须保证初始化对象指针有效，已实现的输出接口会检查 NULL 输出指针。接口返回值只表示调用结果，业务状态通过输出结构体或响应码返回。
 
 ### 2.2 驱动抽象层接口
 
@@ -102,7 +102,7 @@ typedef struct {
 
 应用层当前公开 `robot_control_init()`、`robot_control_handle_motion(&command)`、`robot_control_get_status(&status)`、`robot_control_stop()` 和 `robot_control_update(dt_s)`；未实现 `robot_control_handle_config()`。通信任务收到 `ROBOT_FRAME_COMMAND` 后调用命令分发入口，应用层返回的业务结果再由通信层编码为同一 `sequence` 的响应帧。当前状态迁移主要覆盖 `IDLE -> RUNNING -> STOPPED`，并保留 `INIT`、`ERROR` 状态枚举。
 
-当前应用层错误码为 `ROBOT_APP_OK`、`ROBOT_APP_INVALID_ARGUMENT`、`ROBOT_APP_INVALID_STATE` 和 `ROBOT_APP_LIMIT`。通信响应码仍使用协议层 `ROBOT_STATUS_*`，不得把应用错误码直接当作协议响应码；当前通信层通过映射函数转换，其中非法参数和限位错误映射为长度错误，其他非成功结果映射为未知命令。
+当前应用层错误码为 `ROBOT_APP_OK`、`ROBOT_APP_INVALID_ARGUMENT`、`ROBOT_APP_INVALID_STATE` 和 `ROBOT_APP_LIMIT`。通信响应码仍使用协议层 `ROBOT_STATUS_*`，不得把应用错误码直接当作协议响应码；当前通信层通过映射函数分别转换为 `ROBOT_STATUS_OK`、`ROBOT_STATUS_INVALID_ARGUMENT`、`ROBOT_STATUS_INVALID_STATE` 和 `ROBOT_STATUS_LIMIT`。协议帧长度错误、未知命令等协议层问题仍分别使用 `ROBOT_STATUS_BAD_LENGTH` 和 `ROBOT_STATUS_BAD_COMMAND`，不与业务错误混用。
 
 ### 2.5 通信层接口、数据结构与错误码
 
@@ -116,7 +116,7 @@ typedef struct {
 | `CONFIG` | `parameter_id(1)`、`operation(1)`、参数值（按参数定义） | 查询返回参数值，设置返回空负载 |
 | `STATUS` | 空负载 | 命令响应为 50 字节的状态、位置和速度数据；周期状态帧在其前追加 `task_counter(uint32)`、`timer_counter(uint32)`，总长 58 字节 |
 
-解析器结果 `ROBOT_PROTOCOL_NEED_MORE` 和 `ROBOT_PROTOCOL_FRAME_READY` 不是错误；`ROBOT_PROTOCOL_BAD_FRAME`、`ROBOT_PROTOCOL_OVERSIZE`、`ROBOT_PROTOCOL_TIMEOUT`、`ROBOT_PROTOCOL_DUPLICATE` 分别映射到 `ROBOT_STATUS_BAD_CRC`/长度错误、`ROBOT_STATUS_BAD_LENGTH`、`ROBOT_STATUS_TIMEOUT`、`ROBOT_STATUS_DUPLICATE`。UART 满映射为 `ROBOT_STATUS_OVERFLOW`，未知命令或非法帧类型映射为 `ROBOT_STATUS_BAD_COMMAND`。通信层必须保持请求序号，重复帧只响应不重复执行。
+解析器结果 `ROBOT_PROTOCOL_NEED_MORE` 和 `ROBOT_PROTOCOL_FRAME_READY` 不是错误；`ROBOT_PROTOCOL_BAD_FRAME`、`ROBOT_PROTOCOL_OVERSIZE`、`ROBOT_PROTOCOL_TIMEOUT`、`ROBOT_PROTOCOL_DUPLICATE` 分别表示 CRC/帧格式错误、长度超限、接收超时和重复序号。当前通信层对前三类解析错误和 UART 满状态只增加诊断计数，不伪造响应帧；重复帧因仍能确定请求序号，会返回 `ROBOT_STATUS_DUPLICATE`。未知命令或非法帧类型映射为 `ROBOT_STATUS_BAD_COMMAND`。通信层必须保持请求序号，重复帧只响应不重复执行。
 
 通信层不吞掉错误：编码失败、TX 队列满和应用层处理失败都必须生成可观察的错误计数或响应；当前 `robot_communication_t` 中的 `rx_errors`、`duplicate_frames`、`handled_frames` 是第一版最小诊断计数器。
 
@@ -133,7 +133,7 @@ typedef struct {
 
 系统节拍由 Cortex-M4 SysTick 提供，当前频率为 100 Hz，即 10 ms 一个 Tick。
 
-通信任务拥有命令分发权；当前 `robot_communication_task()` 每 10 ms 读取并处理 UART 数据，随后推进一次关节模型。算法计算不得在 UART ISR 中执行。当前定时器由独立的 FreeRTOS `timer` 任务驱动，周期为 100 ms，回调只执行 GPIO 翻转、读取和计数。当前版本未创建命令队列、状态队列或状态互斥量；`robot_control_status_t` 在通信任务和控制更新路径中直接访问，后续引入多任务共享时必须增加互斥量或消息队列保护。
+通信任务拥有命令分发权；当前 `robot_communication_task()` 每 10 ms 读取并处理 UART 数据，随后推进一次关节模型。算法计算不得在 UART ISR 中执行。当前定时器由独立的 FreeRTOS `timer` 任务驱动，周期为 100 ms，回调只执行 GPIO 翻转、读取和计数。控制状态不通过裸露全局对象跨任务访问，而由控制模块内部 mutex 统一保护；状态读取先复制完整快照后释放锁，避免通信层观察到半更新结构体。当前版本未创建命令队列或状态队列，命令仍由通信任务串行分发。
 
 ### 3.1 调度验证与日志
 
@@ -187,13 +187,13 @@ MOTION / STATUS 命令分发
 - 当前通信层已实现 MOTION 和 STATUS，CONFIG 仅保留命令值和协议位置，尚未实现参数配置或查询分发。
 - 协议解析器将 CRC 错误、超长帧和超时作为解析错误返回；通信层通过 `rx_errors` 记录接收错误，重复帧通过 `duplicate_frames` 计数并返回重复响应。UART RX/TX 队列通过 `ROBOT_UART_FULL` 报告满状态。
 - 双向链路分为两级验收：`firmware/tests/communication_test.c` 在 host 进程内验证请求帧到响应帧的通信层闭环；`simulation/scripts/qemu_link_test.py` 启动 ARM 固件运行于 QEMU，通过 stdin/stdout 连接 CMSDK UART，验证 MOTION、STATUS 和位置反馈。
-- 驱动模块的 Unity 测试由 `firmware/tests/CMakeLists.txt` 独立使用 native 编译器构建，覆盖 UART、协议解析和关节电机接口；构建产物位于被忽略的 `firmware/tests/build/`。
+- 驱动模块的 Unity 测试同时提供 native 和 ARM/QEMU 两条入口：`firmware/tests/CMakeLists.txt` 使用 native 编译器进行快速回归，`robot_driver_unity_qemu` 使用 ARM Cortex-M4 编译器构建并在 FreeRTOS 任务中运行，通过 CMSDK UART 输出结果。两条入口复用同一组 UART、协议解析和关节电机用例；native 构建产物位于被忽略的 `firmware/tests/build/`，ARM 镜像位于 `firmware/build/`。
 
 ## 6. 当前边界
 
 当前目标为 ARM Cortex-M4，使用 QEMU `mps2-an386` 运行固件。QEMU 不提供 STM32 外设寄存器模型，因此 GPIO 和 Timer 仍是抽象行为模型；UART 已通过 QEMU CMSDK APB UART0 完成收发，基地址为 `0x40004000`，固件侧由 `firmware/bsp/qemu_uart.c` 负责寄存器读写，协议和通信层保持与 host bridge 共用。
 
-当前已完成的联调范围包括：host bridge 通信、QEMU MOTION/STATUS 双向链路、QEMU 与 PyBullet 的六关节状态同步，以及 Unity native 驱动单元测试。`simulation/scripts/robot_cli.py` 默认使用 host bridge，增加 `--qemu` 后使用 QEMU 中的 ARM 固件；`--gui` 只负责将 STATUS 响应中的位置同步显示到 PyBullet，不直接生成机器人状态。
+当前已完成的联调范围包括：host bridge 通信、QEMU MOTION/STATUS 双向链路、QEMU 与 PyBullet 的六关节状态同步，以及 Unity native 和 ARM/QEMU 驱动单元测试。`simulation/scripts/robot_cli.py` 默认使用 host bridge，增加 `--qemu` 后使用 QEMU 中的 ARM 固件；`--gui` 只负责将 STATUS 响应中的位置同步显示到 PyBullet，不直接生成机器人状态。
 
 
 ## 7. UR5 运动学

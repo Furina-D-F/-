@@ -86,15 +86,48 @@ int main(void)
 
     request.sequence = 3U;
     request.command = ROBOT_CMD_MOTION;
+    request.payload_length = 33U;
+    response = exchange(&communication, &rx, &request);
+    assert(response.response_code == ROBOT_STATUS_BAD_LENGTH);
+
+    request.sequence = 4U;
+    request.command = 0x7FU;
+    request.payload_length = 0U;
+    response = exchange(&communication, &rx, &request);
+    assert(response.response_code == ROBOT_STATUS_BAD_COMMAND);
+
+    request.sequence = 5U;
+    request.command = ROBOT_CMD_MOTION;
     request.payload_length = 34U;
+    request.payload[0] = 0U;
+    request.payload[1] = 0U;
+    response = exchange(&communication, &rx, &request);
+    assert(response.response_code == ROBOT_STATUS_INVALID_ARGUMENT);
+
+    request.sequence = 6U;
+    request.payload[1] = 0x01U;
+    put_float(request.payload, 2U, 7.0f);
+    response = exchange(&communication, &rx, &request);
+    assert(response.response_code == ROBOT_STATUS_LIMIT);
+
+    request.sequence = 7U;
     request.payload[0] = 1U;
     response = exchange(&communication, &rx, &request);
     assert(response.response_code == ROBOT_STATUS_OK);
 
-    request.sequence = 4U;
+    request.sequence = 8U;
     request.command = ROBOT_CMD_STATUS;
     request.payload_length = 0U;
     response = exchange(&communication, &rx, &request);
     assert(response.payload[0] == ROBOT_CONTROL_STOPPED);
+
+    request.sequence = 9U;
+    request.command = ROBOT_CMD_MOTION;
+    request.payload_length = 34U;
+    request.payload[0] = 0U;
+    request.payload[1] = 0x01U;
+    put_float(request.payload, 2U, 1.0f);
+    response = exchange(&communication, &rx, &request);
+    assert(response.response_code == ROBOT_STATUS_INVALID_STATE);
     return 0;
 }

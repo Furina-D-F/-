@@ -31,7 +31,10 @@ typedef enum {
     ROBOT_STATUS_BAD_CRC = 0x03,
     ROBOT_STATUS_TIMEOUT = 0x04,
     ROBOT_STATUS_DUPLICATE = 0x05,
-    ROBOT_STATUS_OVERFLOW = 0x06
+        ROBOT_STATUS_OVERFLOW = 0x06,
+        ROBOT_STATUS_INVALID_ARGUMENT = 0x07,
+        ROBOT_STATUS_INVALID_STATE = 0x08,
+        ROBOT_STATUS_LIMIT = 0x09
 } robot_response_code_t;
 
 typedef struct {
