@@ -2,6 +2,11 @@
 
 ## 1. 更新日志
 
+- v1.6 增加静态工业场景和[人工势场避障](docs/artificial_potential_field.md)：固件在笛卡尔轨迹更新前修正末端目标，PyBullet 加载共享长方体障碍物并验证反馈、碰撞和轨迹显示。
+- 另：现在启动仿真时初始化/创建队列任务QEMU有概率响应超时，该问题目前无法稳定复现，新增测试文件，测试独立QEMU冷启动、握手、双关节MOTION，推测为windows11环境下virtualbox UBUNTU 22.04下QEMU本身环境不稳定导致
+- v1.5 扩展通信协议，新增笛卡尔直线/圆弧命令；路径任务规划后由 PID 任务周期调用 IK，并将关节目标接入速度执行器和 STATUS 错误反馈。
+- 使用Robotics Toolbox生成共128组覆盖各项区间的测试用例，测试结果以及对比在[文档](docs/kinematics_validation_report.md)精度对比中
+- v1.4 完成 [FreeRTOS 多任务架构](docs/freertos_task_architecture.md)：拆分通信、路径、PID 和状态检测任务，增加运动命令队列、状态邮箱和健康统计；[PID 任务](docs/joint_pid.md)由 SysTick ISR 通过任务通知以 100 Hz 唤醒；新增了untiy单元测试用例，完成 UR5 FK/IK、[关节/笛卡尔轨迹](docs/cartesian_trajectory.md)、增量式 PID、PyBullet 整定及 34 项 native/ARM/QEMU Unity 回归。
 - v1.3 明确协议错误与应用业务错误的边界，新增应用参数非法、控制状态非法和关节限位响应码；Unity 驱动测试扩展为 native 与 ARM/QEMU 两条执行路径，16 个用例在两种环境均通过；补充[通信协议](docs/communication_protocol.md)、[环境依赖](docs/environment_setup.md)和[测试报告](docs/test_report.md)。
 - v1.2 六路关节实例化，[驱动抽象](firmware/drivers/joint_motor.c)，新增QEMU[仿真串口驱动](firmware/bsp/qemu_uart.c)，完成Python客户端到QEMU仿真到FreeRTOS固件的串口通信链路，新增[Python CLI](simulation/scripts/robot_cli.py)，直接连接到固件，并通过指令实现机器人运动（Pybullet可视化已实现），支持通信帧实时返回机器人状态；接入unity测试框架，设计包含UART，协议解析，电机驱动接口编写覆盖正常功能，边界参数异常等共16个单元测试用例，测试全部通过，具体[测试报告](docs/test_report.md)；初步推导UR5 DH参数，坐标体系变换方法，运动学，八解等，具体查看[docs/kinematics.md](docs/kinematics.md)
 - v1.1 更新[技术文档](docs/system_design.md)明确各层功能边界，接口定义，I/O约束和返回值，明确通信层数据结构，返回的错误码；增加了多任务调度验证[代码](firmware/app/scheduler_validation.c)；实现了python到仿真端的双向通信验证[代码](firmware/tests/communication_link_host.c)
@@ -105,6 +110,11 @@ robot/
 │   ├── communication_protocol.md
 │   ├── environment_setup.md
 │   ├── kinematics.md
+│   ├── trajectory_planning.md
+│   ├── cartesian_trajectory.md
+│   ├── joint_pid.md
+│   ├── joint_pid_tuning_report.md
+│   ├── freertos_task_architecture.md
 │   ├── system_design.md
 │   └── test_report.md
 ├── external/
@@ -134,8 +144,13 @@ robot/
 - communication_protocol.md：通信协议约定
 - environment_setup.md：环境搭建与使用说明
 - kinematics.md：运动学初步推导
+- trajectory_planning.md：关节空间三次、五次和梯形速度规划
+- cartesian_trajectory.md：笛卡尔直线/圆弧插补及周期 IK
+- joint_pid.md：单关节增量式 PID、限幅和抗积分饱和
+- joint_pid_tuning_report.md：PyBullet PID 参数整定结果
+- freertos_task_architecture.md：FreeRTOS 多任务、队列和 ISR 通知架构
 - system_design.md：系统总体设计、接口定义和模块分层说明
-- test_report.md：unity测试框架下16个单元测试用例测试报告
+- test_report.md：native 与 ARM/QEMU Unity 测试及链路回归报告
 
 ### external/
 外部依赖目录，当前包含 Bullet3 仿真引擎等第三方模块。
@@ -181,6 +196,22 @@ cmake --build firmware/build --target robot_driver_unity_qemu
 python3 simulation/scripts/qemu_unity_test.py
 ```
 
+运行 QEMU 冷启动稳定性回归：
+
+```bash
+cmake --build firmware/build --target robot_firmware
+python3 simulation/scripts/qemu_startup_stability_test.py
+```
+
+运行静态障碍物人工势场场景：
+
+```bash
+cmake --build firmware/build
+python3 simulation/scripts/pybullet_apf_scene.py --headless
+python3 simulation/scripts/pybullet_apf_scene.py
+```
+
 详细的环境配置、协议定义、系统设计和测试结果见
 [environment_setup.md](docs/environment_setup.md)、[communication_protocol.md](docs/communication_protocol.md)、
-[system_design.md](docs/system_design.md) 和 [test_report.md](docs/test_report.md)。
+[system_design.md](docs/system_design.md)、[artificial_potential_field.md](docs/artificial_potential_field.md) 和
+[test_report.md](docs/test_report.md)。

@@ -135,6 +135,33 @@ robot_app_result_t robot_control_handle_motion(const motion_command_t *command)
     return ROBOT_APP_OK;
 }
 
+robot_app_result_t robot_control_start_velocity_control(void)
+{
+    robot_app_result_t result = ROBOT_APP_OK;
+
+    control_lock();
+    if (control_status.state != ROBOT_CONTROL_IDLE
+        && control_status.state != ROBOT_CONTROL_RUNNING) {
+        control_status.error_code = ROBOT_APP_INVALID_STATE;
+        result = ROBOT_APP_INVALID_STATE;
+    } else {
+        control_status.state = ROBOT_CONTROL_RUNNING;
+        control_status.error_code = ROBOT_APP_OK;
+    }
+    control_unlock();
+    return result;
+}
+
+void robot_control_report_error(robot_app_result_t error_code)
+{
+    control_lock();
+    control_status.error_code = (uint8_t) error_code;
+    if (error_code != ROBOT_APP_OK) {
+        control_status.state = ROBOT_CONTROL_ERROR;
+    }
+    control_unlock();
+}
+
 robot_app_result_t robot_control_stop(void)
 {
     robot_app_result_t result;
@@ -151,6 +178,37 @@ void robot_control_update(float dt_s)
 
     control_lock();
     robot_joint_update(dt_s);
+    for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
+        if (robot_joint_get_state(index, &joint_state) == ROBOT_JOINT_OK) {
+            control_status.position_rad[index] = joint_state.position_rad;
+            control_status.velocity_rad_s[index] = joint_state.velocity_rad_s;
+        }
+    }
+    control_unlock();
+}
+
+robot_app_result_t robot_control_set_velocity_command(
+    uint8_t joint_id,
+    float velocity_rad_s
+)
+{
+    robot_app_result_t result = ROBOT_APP_OK;
+
+    control_lock();
+    if (robot_joint_set_velocity_command(joint_id, velocity_rad_s)
+        != ROBOT_JOINT_OK) {
+        result = ROBOT_APP_INVALID_ARGUMENT;
+    }
+    control_unlock();
+    return result;
+}
+
+void robot_control_update_velocity_control(float dt_s)
+{
+    robot_joint_state_t joint_state;
+
+    control_lock();
+    robot_joint_update_velocity_control(dt_s);
     for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
         if (robot_joint_get_state(index, &joint_state) == ROBOT_JOINT_OK) {
             control_status.position_rad[index] = joint_state.position_rad;

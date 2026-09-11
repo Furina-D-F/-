@@ -6,6 +6,7 @@ enable_testing()
 
 set(UNITY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/Unity/src)
 set(DRIVERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../drivers)
+set(APP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../app)
 
 add_executable(robot_driver_unity_tests
     ${UNITY_DIR}/unity.c
@@ -13,6 +14,11 @@ add_executable(robot_driver_unity_tests
     ${DRIVERS_DIR}/uart.c
     ${DRIVERS_DIR}/protocol.c
     ${DRIVERS_DIR}/joint_motor.c
+    ${APP_DIR}/kinematics.c
+    ${APP_DIR}/trajectory.c
+    ${APP_DIR}/cartesian_trajectory.c
+    ${APP_DIR}/artificial_potential_field.c
+    ${APP_DIR}/joint_pid.c
 )
 
 target_compile_features(robot_driver_unity_tests PRIVATE c_std_11)
@@ -20,6 +26,7 @@ target_compile_options(robot_driver_unity_tests PRIVATE -Wall -Wextra -Werror)
 target_include_directories(robot_driver_unity_tests PRIVATE
     ${UNITY_DIR}
     ${DRIVERS_DIR}
+    ${APP_DIR}
 )
 target_link_libraries(robot_driver_unity_tests PRIVATE m)
 

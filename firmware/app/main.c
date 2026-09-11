@@ -9,6 +9,7 @@
 #include "timer.h"
 #include "communication.h"
 #include "scheduler_validation.h"
+#include "robot_tasks.h"
 
 volatile uint32_t task_counter;
 volatile uint32_t timer_callback_counter;
@@ -42,12 +43,20 @@ int main(void)
 {
     bsp_clock_init();
     bsp_gpio_init();
-    bsp_qemu_uart_init();
     robot_communication_init(&communication, &communication_rx, &communication_tx);
+    bsp_qemu_uart_init(&communication_rx, &communication_tx);
+#ifdef ROBOT_ENABLE_SCHEDULER_VALIDATION
     scheduler_validation_start();
+#endif
 
     if (xTaskCreate(robot_communication_task, "communication", 256,
         &communication, 3, NULL) != pdPASS) {
+        for (;;) {
+        }
+    }
+
+    if (xTaskCreate(robot_tasks_bootstrap_task, "task_init", 256, NULL,
+        4, NULL) != pdPASS) {
         for (;;) {
         }
     }

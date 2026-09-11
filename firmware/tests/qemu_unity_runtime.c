@@ -1,5 +1,12 @@
 #include <stddef.h>
 
+static int errno_value;
+
+int *__errno(void)
+{
+    return &errno_value;
+}
+
 void *memset(void *destination, int value, size_t length)
 {
     unsigned char *bytes = destination;

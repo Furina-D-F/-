@@ -10,6 +10,8 @@ typedef enum {
     BSP_TIMER_ERROR = -1
 } bsp_timer_status_t;
 
+void robot_tasks_tick_isr(void);
+
 bsp_timer_status_t bsp_timer_start_periodic(
     uint32_t period_ms,
     bsp_timer_callback_t callback,

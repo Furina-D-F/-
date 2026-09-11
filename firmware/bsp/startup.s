@@ -16,6 +16,15 @@ __isr_vector:
     .word Default_Handler
     .word xPortPendSVHandler
     .word xPortSysTickHandler
+    .word UART0_Handler
+    .word UART0_Handler
+    .rept 10
+    .word Default_Handler
+    .endr
+    .word UART0_Handler
+    .rept 19
+    .word Default_Handler
+    .endr
 .size __isr_vector, . - __isr_vector
 
 .section .text.Reset_Handler, "ax", %progbits
@@ -32,3 +41,10 @@ Reset_Handler:
 Default_Handler:
     b .
 .size Default_Handler, . - Default_Handler
+
+.section .text.UART0_Handler, "ax", %progbits
+.global UART0_Handler
+.type UART0_Handler, %function
+UART0_Handler:
+    b bsp_qemu_uart_irq_handler
+.size UART0_Handler, . - UART0_Handler

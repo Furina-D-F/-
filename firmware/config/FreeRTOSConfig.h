@@ -17,7 +17,7 @@
 
 #define configSUPPORT_STATIC_ALLOCATION             0
 #define configSUPPORT_DYNAMIC_ALLOCATION            1
-#define configTOTAL_HEAP_SIZE                       ( 16 * 1024 )
+#define configTOTAL_HEAP_SIZE                       ( 24 * 1024 )
 
 #define configKERNEL_INTERRUPT_PRIORITY             255
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY        0x80
@@ -44,11 +44,13 @@
 #define configUSE_APPLICATION_TASK_TAG                0
 #define configGENERATE_RUN_TIME_STATS                0
 #define configUSE_IDLE_HOOK                           0
-#define configUSE_TICK_HOOK                           0
+#define configUSE_TICK_HOOK                           1
 #define configUSE_MALLOC_FAILED_HOOK                  0
 
 #define INCLUDE_vTaskDelay                            1
 #define INCLUDE_vTaskDelayUntil                       1
 #define INCLUDE_xTaskGetTickCount                     1
+#define INCLUDE_vTaskDelete                           1
+#define INCLUDE_vTaskSuspend                          1
 
 #endif

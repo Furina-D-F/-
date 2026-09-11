@@ -24,7 +24,7 @@ PyBullet 仿真端
 | 通信层 | UART 缓存、帧编码、帧解析、命令响应 |
 | 驱动抽象层 | 时钟、GPIO 电平、周期回调 |
 | 应用层 | FreeRTOS 任务、系统状态机、命令分发和状态汇总 |
-| 算法层 | 运动学、轨迹规划、PID；第一周只定义契约，后续阶段实现 |
+| 算法层 | UR5 运动学、关节/笛卡尔轨迹规划、单关节增量式 PID |
 
 ### 2.1 依赖与调用规则
 
@@ -40,7 +40,7 @@ PyBullet 仿真端
 |---|---|---|---|
 | 时钟 | `bsp_clock_init()`、`bsp_clock_get_hz()`、`bsp_tick_get()`、`bsp_delay_ms(ms)` | 初始化一次；时间单位为 ms；tick 为无符号系统节拍 | 初始化和延时无返回值，频率/tick 返回当前值 |
 | GPIO | `bsp_gpio_write(pin, level)`、`bsp_gpio_toggle(pin)`、`bsp_gpio_read(pin, &level)` | `pin` 必须小于 16；read 输出指针不可为 NULL；当前实现将非 `BSP_GPIO_HIGH` 的 level 按低电平处理 | `BSP_GPIO_OK`、`BSP_GPIO_INVALID_PIN` |
-| 定时器 | `bsp_timer_start_periodic(period_ms, callback, context)` | 周期大于 0，回调不可为 NULL；回调不得阻塞 | `BSP_TIMER_OK`、`BSP_TIMER_ERROR` |
+| 定时器 | `bsp_timer_start_periodic(period_ms, callback, context)` | 周期大于 0，回调不可为 NULL；回调在 SysTick 中断中执行且不得阻塞 | `BSP_TIMER_OK`、`BSP_TIMER_ERROR` |
 | UART RX | `robot_uart_init(&rx)`、`robot_uart_rx_isr_push(&rx, byte)`、`robot_uart_read(&rx, &byte)`、`robot_uart_available(&rx)` | RX 环形缓存容量为 256 字节，实际可用容量为 255 字节；ISR 只入队 | `ROBOT_UART_OK`、`ROBOT_UART_EMPTY`、`ROBOT_UART_FULL` |
 | UART TX | `robot_uart_tx_init(&tx)`、`robot_uart_tx_write(&tx, byte)`、`robot_uart_tx_read(&tx, &byte)`、`robot_uart_tx_available(&tx)` | TX 发送队列容量为 256 字节，满时不覆盖旧数据 | `ROBOT_UART_OK`、`ROBOT_UART_EMPTY`、`ROBOT_UART_FULL` |
 
@@ -74,7 +74,9 @@ typedef struct {
 } pid_config_t;
 ```
 
-接口设计：`robot_kinematics_fk(joint, &pose)`、`robot_kinematics_ik(&pose, solutions, &count)`、`robot_trajectory_next(&trajectory, now_s, &point)`、`robot_pid_init(&pid, &config)` 和 `robot_pid_update(&pid, target, feedback, dt_s, &output)`。。
+当前实现包括：`robot_kinematics_fk()`、`robot_kinematics_ik()`、`robot_kinematics_select_best()`、`robot_trajectory_plan_cubic()`、`robot_trajectory_plan_quintic()`、`robot_trajectory_plan_trapezoid()`、`robot_cartesian_plan_line()`、`robot_cartesian_plan_arc()`、`robot_cartesian_update()`、`robot_pid_init()` 和 `robot_pid_update()`。算法模块使用固定数组和局部存储，不依赖 FreeRTOS、通信或堆内存。
+
+独立 PID 模块已完成算法、限幅、死区、抗积分饱和和 PyBullet 整定。当前任务层已将其输出绑定为 `rad/s` 速度执行器：路径任务生成梯形轨迹，PID 任务采样轨迹并读取反馈，控制层更新速度模型。真实硬件移植时只需替换速度执行器实现；现有 MOTION 协议为关节目标，笛卡尔目标仍需扩展协议后调用 IK。
 
 ### 2.4 应用层接口与状态机
 
@@ -100,9 +102,9 @@ typedef struct {
 } robot_control_status_t;
 ```
 
-应用层当前公开 `robot_control_init()`、`robot_control_handle_motion(&command)`、`robot_control_get_status(&status)`、`robot_control_stop()` 和 `robot_control_update(dt_s)`；未实现 `robot_control_handle_config()`。通信任务收到 `ROBOT_FRAME_COMMAND` 后调用命令分发入口，应用层返回的业务结果再由通信层编码为同一 `sequence` 的响应帧。当前状态迁移主要覆盖 `IDLE -> RUNNING -> STOPPED`，并保留 `INIT`、`ERROR` 状态枚举。
+应用层当前公开 `robot_control_init()`、`robot_control_handle_motion(&command)`、`robot_control_get_status(&status)`、`robot_control_stop()` 和 `robot_control_update(dt_s)`；未实现 `robot_control_handle_config()`。通信任务收到 MOTION 后通过 `robot_tasks_submit_motion()` 非阻塞入队，路径任务再调用命令分发入口；响应表示命令已接受入队，实际控制结果通过 STATUS 观察。当前状态迁移主要覆盖 `IDLE -> RUNNING -> STOPPED`，并保留 `INIT`、`ERROR` 状态枚举。
 
-当前应用层错误码为 `ROBOT_APP_OK`、`ROBOT_APP_INVALID_ARGUMENT`、`ROBOT_APP_INVALID_STATE` 和 `ROBOT_APP_LIMIT`。通信响应码仍使用协议层 `ROBOT_STATUS_*`，不得把应用错误码直接当作协议响应码；当前通信层通过映射函数分别转换为 `ROBOT_STATUS_OK`、`ROBOT_STATUS_INVALID_ARGUMENT`、`ROBOT_STATUS_INVALID_STATE` 和 `ROBOT_STATUS_LIMIT`。协议帧长度错误、未知命令等协议层问题仍分别使用 `ROBOT_STATUS_BAD_LENGTH` 和 `ROBOT_STATUS_BAD_COMMAND`，不与业务错误混用。
+当前应用层错误码为 `ROBOT_APP_OK`、`ROBOT_APP_INVALID_ARGUMENT`、`ROBOT_APP_INVALID_STATE` 和 `ROBOT_APP_LIMIT`。通信响应码仍使用协议层 `ROBOT_STATUS_*`，不得把应用错误码直接当作协议响应码。异步架构下，MOTION 响应首先表示命令是否成功进入队列；队列满返回通信层错误，路径任务执行后的应用状态通过 STATUS 观察。协议帧长度错误、未知命令等协议层问题仍分别使用 `ROBOT_STATUS_BAD_LENGTH` 和 `ROBOT_STATUS_BAD_COMMAND`，不与业务错误混用。
 
 ### 2.5 通信层接口、数据结构与错误码
 
@@ -115,6 +117,8 @@ typedef struct {
 | `MOTION` | `mode(1)`、`joint_mask(1)`、6 个 `float32` 目标角度、`float32` 最大速度、`float32` 最大加速度，共 34 字节 | 空负载；业务错误放在 response code |
 | `CONFIG` | `parameter_id(1)`、`operation(1)`、参数值（按参数定义） | 查询返回参数值，设置返回空负载 |
 | `STATUS` | 空负载 | 命令响应为 50 字节的状态、位置和速度数据；周期状态帧在其前追加 `task_counter(uint32)`、`timer_counter(uint32)`，总长 58 字节 |
+| `CARTESIAN_LINE` | 起点/终点姿态各 7 个 `float32`，再加 `duration_s`、`period_s`，共 64 字节 | 空负载；路径规划和周期 IK 结果通过 STATUS 观察 |
+| `CARTESIAN_ARC` | 起点/终点/圆心姿态各 7 个 `float32`，再加 `direction`、`duration_s`、`period_s`，共 93 字节 | 空负载；路径规划和周期 IK 结果通过 STATUS 观察 |
 
 解析器结果 `ROBOT_PROTOCOL_NEED_MORE` 和 `ROBOT_PROTOCOL_FRAME_READY` 不是错误；`ROBOT_PROTOCOL_BAD_FRAME`、`ROBOT_PROTOCOL_OVERSIZE`、`ROBOT_PROTOCOL_TIMEOUT`、`ROBOT_PROTOCOL_DUPLICATE` 分别表示 CRC/帧格式错误、长度超限、接收超时和重复序号。当前通信层对前三类解析错误和 UART 满状态只增加诊断计数，不伪造响应帧；重复帧因仍能确定请求序号，会返回 `ROBOT_STATUS_DUPLICATE`。未知命令或非法帧类型映射为 `ROBOT_STATUS_BAD_COMMAND`。通信层必须保持请求序号，重复帧只响应不重复执行。
 
@@ -124,8 +128,11 @@ typedef struct {
 
 | 任务 | 优先级 | 周期/行为 |
 |---|---:|---|
-| `communication` | 3 | 每 10 ms 读取并解析 UART 缓存 |
-| `timer` | 2 | 当前配置为每 100 ms 唤醒一次，调用 GPIO 翻转和计数回调 |
+| `communication` | 3 | 每 10 ms 读取并解析 UART 缓存，运动命令入队 |
+| `path` | 3 | 阻塞等待运动命令队列，更新控制目标 |
+| `pid` | 4 | 由 SysTick 每 10 ms 发任务通知后执行控制更新 |
+| `status` | 1 | 阻塞等待最新状态邮箱，检查状态健康 |
+| SysTick timer | 中断 | 调用周期回调，并向 PID 任务发送通知；ISR 不执行控制计算 |
 | `heartbeat` | 1 | 每 100 ms 更新心跳计数 |
 | `sched_high` | 4 | 调度验证任务，每 20 ms 记录一次运行后延时 |
 | `sched_low` | 2 | 调度验证任务，每 50 ms 记录一次运行后延时 |
@@ -133,7 +140,7 @@ typedef struct {
 
 系统节拍由 Cortex-M4 SysTick 提供，当前频率为 100 Hz，即 10 ms 一个 Tick。
 
-通信任务拥有命令分发权；当前 `robot_communication_task()` 每 10 ms 读取并处理 UART 数据，随后推进一次关节模型。算法计算不得在 UART ISR 中执行。当前定时器由独立的 FreeRTOS `timer` 任务驱动，周期为 100 ms，回调只执行 GPIO 翻转、读取和计数。控制状态不通过裸露全局对象跨任务访问，而由控制模块内部 mutex 统一保护；状态读取先复制完整快照后释放锁，避免通信层观察到半更新结构体。当前版本未创建命令队列或状态队列，命令仍由通信任务串行分发。
+UART RX 由硬件中断写入环形缓存，TX 由发送中断从环形缓存取出，`robot_communication_task()` 每 10 ms 读取并处理缓存中的协议数据。通信任务不再推进关节模型，而是将 MOTION 命令送入有界队列；路径任务消费命令，PID 任务独占控制更新。SysTick hook 每 10 ms 使用 `vTaskNotifyGiveFromISR()` 唤醒 PID 任务，复杂计算仍在任务上下文执行。控制状态由控制模块内部 mutex 保护，状态快照通过单槽邮箱传给状态任务。算法计算不得在 UART 或 SysTick ISR 中执行。
 
 ### 3.1 调度验证与日志
 
@@ -168,14 +175,20 @@ UART 接收环形缓存
     ↓
 通信任务
     ↓
-MOTION / STATUS 命令分发
-    ├─ MOTION -> 应用层/关节电机 -> 响应帧
-    └─ STATUS -> 应用层状态 -> 50 字节响应帧
+通信任务
+    ├─ MOTION -> 运动命令队列 -> 路径任务 -> 梯形轨迹 -> PID
+    ├─ CARTESIAN_LINE/ARC -> 运动命令队列 -> 路径任务 -> 笛卡尔轨迹 -> 周期 IK -> PID
+    │                                             |
+    │                                             v
+    │                                      C 人工势场修正 -> 静态 AABB
+    └─ STATUS -> 控制状态快照 -> 50 字节响应帧
+
+SysTick ISR -> PID 任务通知 -> 控制更新 -> 状态邮箱 -> 状态任务
 
 周期状态帧由通信层主动组装，在状态数据前追加计数器后发送。
 ```
 
-请求链路的具体调用为：`robot_uart_rx_isr_push()` -> `robot_communication_poll()` -> `robot_protocol_parser_feed()` -> `handle_frame()`；MOTION 继续调用 `robot_control_handle_motion()` 和关节电机接口，STATUS 调用 `robot_control_get_status()` 后生成响应帧。周期状态使用 `robot_communication_send_status()` 主动发送。
+请求链路的具体调用为：`robot_uart_rx_isr_push()` -> `robot_communication_poll()` -> `robot_protocol_parser_feed()` -> `handle_frame()`；MOTION 调用 `robot_tasks_submit_motion()` 入队，路径任务随后调用 `robot_control_handle_motion()`，STATUS 调用 `robot_control_get_status()` 后生成响应帧。周期状态使用 `robot_communication_send_status()` 主动发送。
 
 正常命令处理结果通过 response code 返回；CRC 错误、超长帧、超时和 UART 缓存满目前由解析器/通信层返回或计数，不会统一生成错误响应帧。CONFIG 尚未实现命令分发。
 

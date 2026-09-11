@@ -66,7 +66,12 @@ UR5 的后三轴构成球腕。给定 `T_B_E=[R_B_E,p_B_E]`，先求 `T_B_6=T_B_
 3. **腕部**：由 `R_3_6=R_B_3^T R_B_6` 求 `q4,q5,q6`。`q5` 的正负分支对应腕部翻转；当 `|sin(q5)|<tol` 时，`q4+q6` 只有组合值可确定，应按当前关节位置选连续解并标记 `ROBOT_ALGO_SINGULAR` 风险。
 4. **验算去重**：每组先将 `q+2kpi` 归一化到最接近当前状态的等价值，再计算 FK。仅保留位置误差和旋转角误差均在容差内的候选，并去掉数值重复项；`acos/asin` 前 clamp 到 `[-1,1]`，但超过容差必须返回无解。
 
-解选择优先级为：全部关节满足限位，其次距离当前关节状态的加权平方和最小，再其次远离奇异面。`robot_kinematics_ik()` 返回全部候选及 `count`，不应静默只返回第一组；无候选返回 `ROBOT_ALGO_NO_SOLUTION`。
+`robot_kinematics_ik()` 返回全部候选及 `count`，不静默只返回第一组；随后由
+`robot_kinematics_select_best()` 选择控制解。候选评分为：
+
+`total_cost = travel_cost + 4 * limit_cost + 8 * singularity_cost`
+
+其中 `travel_cost` 是相对当前关节状态的最短角距离平方和，`limit_cost` 在距离任一限位小于该关节行程 15% 时按平方增长，`singularity_cost` 使用腕部和肘部退化裕量的倒数。`|sin(q5)| < 1e-3` 判定腕部奇异，`|sin(q3)| < 1e-3` 判定肘部奇异；奇异候选不作为最优控制解，若所有候选均奇异则返回 `ROBOT_KINEMATICS_SINGULAR`。输入矩阵必须有限、底行近似 `[0,0,0,1]`、旋转部分正交且行列式接近 1，否则返回 `ROBOT_KINEMATICS_INVALID_POSE`。无候选返回 `ROBOT_KINEMATICS_NO_SOLUTION`。
 
 ## 6. 关节限位规则
 

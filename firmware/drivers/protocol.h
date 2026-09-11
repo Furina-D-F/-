@@ -21,7 +21,9 @@ typedef enum {
 typedef enum {
     ROBOT_CMD_MOTION = 0x01,
     ROBOT_CMD_CONFIG = 0x02,
-    ROBOT_CMD_STATUS = 0x03
+    ROBOT_CMD_STATUS = 0x03,
+    ROBOT_CMD_CARTESIAN_LINE = 0x04,
+    ROBOT_CMD_CARTESIAN_ARC = 0x05
 } robot_command_t;
 
 typedef enum {

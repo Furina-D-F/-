@@ -27,8 +27,15 @@
 |---|---|---|
 | PyBullet | 3.2.6 | UR5 机器人物理仿真 |
 | xacro | 2.1.1 | 将 ROS 机器人描述模板转换为 URDF |
+| roboticstoolbox-python | 1.4.2 | UR5 标准 DH 运动学精度基准 |
 
 Python 包安装在项目的 `.venv` 虚拟环境中。
+
+运动学精度验证还需要安装 Robotics Toolbox：
+
+```bash
+python3 -m pip install roboticstoolbox-python==1.4.2
+```
 
 初始化仓库依赖：
 
@@ -51,4 +58,4 @@ Unity 通过 `firmware/third_party/Unity` submodule 引入；FreeRTOS 位于
 
 ## 5. UR5 模型说明
 
-当前使用的 `simulation/models/ur5/ur5.urdf` 已完成人工核对，六个活动关节的顺序、URDF 原点、旋转轴、名义 UR5 DH 几何参数和位置限位均已确认与仓库内 UR5 配置一致。运动学定义、坐标系和 8 组逆解规则见 [system_design.md](system_design.md)。
+当前使用的 `simulation/models/ur5/ur5.urdf` ，六个活动关节的顺序、URDF 原点、旋转轴、名义 UR5 DH 几何参数和位置限位均已确认与仓库内 UR5 配置一致。运动学定义、坐标系和 8 组逆解规则见 [system_design.md](system_design.md)。

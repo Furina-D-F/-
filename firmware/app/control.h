@@ -38,8 +38,15 @@ typedef struct {
 
 void robot_control_init(void);
 robot_app_result_t robot_control_handle_motion(const motion_command_t *command);
+robot_app_result_t robot_control_start_velocity_control(void);
+void robot_control_report_error(robot_app_result_t error_code);
 robot_app_result_t robot_control_stop(void);
 void robot_control_update(float dt_s);
+robot_app_result_t robot_control_set_velocity_command(
+    uint8_t joint_id,
+    float velocity_rad_s
+);
+void robot_control_update_velocity_control(float dt_s);
 void robot_control_get_status(robot_control_status_t *status);
 
 #endif

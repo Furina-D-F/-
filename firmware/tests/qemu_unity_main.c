@@ -18,7 +18,7 @@ static void unity_task(void *argument)
 int main(void)
 {
     bsp_clock_init();
-    bsp_qemu_uart_init();
+    bsp_qemu_uart_init(NULL, NULL);
     if (xTaskCreate(unity_task, "unity", 1024, NULL, 3, NULL) != pdPASS) {
         for (;;) {
         }

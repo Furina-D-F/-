@@ -16,6 +16,12 @@ set(FREERTOS_DIR ${CMAKE_SOURCE_DIR}/third_party/FreeRTOS-Kernel)
 add_executable(robot_firmware
     app/main.c
     app/control.c
+    app/kinematics.c
+    app/trajectory.c
+    app/cartesian_trajectory.c
+    app/artificial_potential_field.c
+    app/joint_pid.c
+    app/robot_tasks.c
     app/scheduler_validation.c
     bsp/startup.s
     bsp/clock.c
@@ -69,7 +75,7 @@ target_link_options(robot_firmware PRIVATE
     -Wl,-Map=${CMAKE_BINARY_DIR}/robot_firmware.map
 )
 
-target_link_libraries(robot_firmware PRIVATE gcc)
+target_link_libraries(robot_firmware PRIVATE gcc m)
 
 set_target_properties(robot_firmware PROPERTIES SUFFIX ".elf")
 
@@ -87,10 +93,16 @@ add_executable(robot_driver_unity_qemu
     third_party/Unity/src/unity.c
     bsp/startup.s
     bsp/clock.c
+    bsp/timer.c
     bsp/qemu_uart.c
     drivers/joint_motor.c
     drivers/protocol.c
     drivers/uart.c
+    app/kinematics.c
+    app/trajectory.c
+    app/cartesian_trajectory.c
+    app/artificial_potential_field.c
+    app/joint_pid.c
     ${FREERTOS_DIR}/tasks.c
     ${FREERTOS_DIR}/queue.c
     ${FREERTOS_DIR}/list.c
@@ -140,7 +152,7 @@ target_link_options(robot_driver_unity_qemu PRIVATE
     -Wl,-Map=${CMAKE_BINARY_DIR}/robot_driver_unity_qemu.map
 )
 
-target_link_libraries(robot_driver_unity_qemu PRIVATE gcc)
+target_link_libraries(robot_driver_unity_qemu PRIVATE gcc m)
 set_target_properties(robot_driver_unity_qemu PROPERTIES SUFFIX ".elf")
 
 add_custom_command(TARGET robot_driver_unity_qemu POST_BUILD

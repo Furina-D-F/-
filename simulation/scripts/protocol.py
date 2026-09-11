@@ -15,6 +15,8 @@ FRAME_STATUS = 0x03
 CMD_MOTION = 0x01
 CMD_CONFIG = 0x02
 CMD_STATUS = 0x03
+CMD_CARTESIAN_LINE = 0x04
+CMD_CARTESIAN_ARC = 0x05
 
 STATUS_OK = 0x00
 STATUS_BAD_LENGTH = 0x01
@@ -47,6 +49,24 @@ def encode(frame_type: int, sequence: int, command: int,
     )
     body = header + payload
     return body + struct.pack("<H", crc16(body))
+
+
+def cartesian_pose(x: float, y: float, z: float,
+                   qx: float, qy: float, qz: float, qw: float) -> bytes:
+    return struct.pack("<7f", x, y, z, qx, qy, qz, qw)
+
+
+def cartesian_line_payload(start_pose, end_pose, duration_s: float,
+                           period_s: float) -> bytes:
+    return (cartesian_pose(*start_pose) + cartesian_pose(*end_pose)
+            + struct.pack("<2f", duration_s, period_s))
+
+
+def cartesian_arc_payload(start_pose, end_pose, center_pose, direction: int,
+                          duration_s: float, period_s: float) -> bytes:
+    return (cartesian_pose(*start_pose) + cartesian_pose(*end_pose)
+            + cartesian_pose(*center_pose) + struct.pack(
+                "<B2f", direction, duration_s, period_s))
 
 
 class FrameParser:

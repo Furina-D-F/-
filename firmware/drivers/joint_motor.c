@@ -6,6 +6,8 @@ typedef struct {
     float target_position_rad;
     float max_velocity_rad_s;
     float max_acceleration_rad_s2;
+    float velocity_command_rad_s;
+    int velocity_control_enabled;
     int32_t encoder_count;
 } robot_joint_instance_t;
 
@@ -27,6 +29,8 @@ void robot_joint_init(uint8_t id)
         joints[id].target_position_rad = 0.0f;
         joints[id].max_velocity_rad_s = 1.0f;
         joints[id].max_acceleration_rad_s2 = 1.0f;
+        joints[id].velocity_command_rad_s = 0.0f;
+        joints[id].velocity_control_enabled = 0;
         joints[id].encoder_count = 0;
     }
 }
@@ -49,6 +53,23 @@ robot_joint_result_t robot_joint_set_target(
     joints[id].target_position_rad = position_rad;
     joints[id].max_velocity_rad_s = max_velocity_rad_s;
     joints[id].max_acceleration_rad_s2 = max_acceleration_rad_s2;
+    joints[id].velocity_control_enabled = 0;
+    return ROBOT_JOINT_OK;
+}
+
+robot_joint_result_t robot_joint_set_velocity_command(
+    uint8_t id,
+    float velocity_rad_s
+)
+{
+    if (!valid_id(id)) {
+        return ROBOT_JOINT_INVALID_ID;
+    }
+    if (velocity_rad_s != velocity_rad_s) {
+        return ROBOT_JOINT_INVALID_ARGUMENT;
+    }
+    joints[id].velocity_command_rad_s = velocity_rad_s;
+    joints[id].velocity_control_enabled = 1;
     return ROBOT_JOINT_OK;
 }
 
@@ -110,7 +131,25 @@ robot_joint_result_t robot_joint_stop(uint8_t id)
     }
     joints[id].target_position_rad = joints[id].position_rad;
     joints[id].velocity_rad_s = 0.0f;
+    joints[id].velocity_command_rad_s = 0.0f;
+    joints[id].velocity_control_enabled = 0;
     return ROBOT_JOINT_OK;
+}
+
+void robot_joint_update_velocity_control(float dt_s)
+{
+    if (dt_s <= 0.0f || dt_s != dt_s) {
+        return;
+    }
+    for (uint8_t id = 0U; id < ROBOT_JOINT_COUNT; id++) {
+        if (joints[id].velocity_control_enabled == 0) {
+            continue;
+        }
+        joints[id].velocity_rad_s = joints[id].velocity_command_rad_s;
+        joints[id].position_rad += joints[id].velocity_rad_s * dt_s;
+        joints[id].encoder_count = (int32_t) ((joints[id].position_rad
+            * (float) ROBOT_JOINT_ENCODER_COUNTS_PER_REV) / ROBOT_TWO_PI);
+    }
 }
 
 void robot_joint_update(float dt_s)

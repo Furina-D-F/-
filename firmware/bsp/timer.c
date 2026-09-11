@@ -1,29 +1,32 @@
 #include "timer.h"
 
 #include "FreeRTOS.h"
-#include "task.h"
 
 typedef struct {
-    uint32_t period_ms;
+    TickType_t period_ticks;
+    TickType_t elapsed_ticks;
     bsp_timer_callback_t callback;
     void *context;
+    BaseType_t active;
 } bsp_timer_context_t;
 
 static bsp_timer_context_t timer_context;
 
-static void timer_task(void *argument)
+__attribute__((weak)) void robot_tasks_tick_isr(void)
 {
-    bsp_timer_context_t *context = argument;
-    TickType_t last_wake = xTaskGetTickCount();
-    TickType_t period_ticks = pdMS_TO_TICKS(context->period_ms);
+}
 
-    if (period_ticks == 0U) {
-        period_ticks = 1U;
+void vApplicationTickHook(void)
+{
+    robot_tasks_tick_isr();
+    if (timer_context.active == pdFALSE) {
+        return;
     }
 
-    for (;;) {
-        vTaskDelayUntil(&last_wake, period_ticks);
-        context->callback(context->context);
+    timer_context.elapsed_ticks++;
+    if (timer_context.elapsed_ticks >= timer_context.period_ticks) {
+        timer_context.elapsed_ticks = 0U;
+        timer_context.callback(timer_context.context);
     }
 }
 
@@ -37,13 +40,14 @@ bsp_timer_status_t bsp_timer_start_periodic(
         return BSP_TIMER_ERROR;
     }
 
-    timer_context.period_ms = period_ms;
+    timer_context.period_ticks = pdMS_TO_TICKS(period_ms);
+    if (timer_context.period_ticks == 0U) {
+        timer_context.period_ticks = 1U;
+    }
+    timer_context.elapsed_ticks = 0U;
     timer_context.callback = callback;
     timer_context.context = context;
-
-    if (xTaskCreate(timer_task, "timer", 256, &timer_context, 2, NULL) != pdPASS) {
-        return BSP_TIMER_ERROR;
-    }
+    timer_context.active = pdTRUE;
 
     return BSP_TIMER_OK;
 }

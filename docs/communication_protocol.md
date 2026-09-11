@@ -23,6 +23,8 @@
 | `01` | MOTION | 主机到固件 | 目标关节或轨迹指令 |
 | `02` | CONFIG | 双向 | 参数配置和查询；当前通信层尚未实现 |
 | `03` | STATUS | 双向 | 状态查询或周期状态上报；payload 为 `state(1)`、`error_code(1)`、6 个位置 `float32`、6 个速度 `float32` |
+| `04` | CARTESIAN_LINE | 主机到固件 | 笛卡尔直线轨迹，周期 IK |
+| `05` | CARTESIAN_ARC | 主机到固件 | 笛卡尔圆弧轨迹，周期 IK |
 
 ## 响应码
 
@@ -34,14 +36,18 @@ CRC 错误、接收超时和接收缓存溢出目前由解析器或通信层记�
 
 MOTION payload 固定为 34 字节：`mode(1)`、`joint_mask(1)`、6 个 little-endian `float32` 目标角度、最大速度和最大加速度。`mode=0` 为目标运动，`mode=1` 为停止；停止模式仍需提供非零 `joint_mask`。STATUS payload 固定为 50 字节；周期状态帧在此之前追加 `task_counter(uint32)` 和 `timer_counter(uint32)`，总长 58 字节。
 
+笛卡尔姿态使用紧凑的 7 个 little-endian `float32`：`x, y, z, qx, qy, qz, qw`，单位为米，四元数由固件归一化。`CARTESIAN_LINE` payload 为 64 字节：起点姿态 28 字节、终点姿态 28 字节、`duration_s` 和 `period_s` 各 4 字节。`CARTESIAN_ARC` payload 为 93 字节：起点、终点和圆心姿态各 28 字节，随后为 `direction(uint8)`、`duration_s` 和 `period_s`；方向 `0` 为负向、`1` 为正向。路径任务在收到命令后规划，PID 任务每 10 ms 调用一次笛卡尔插补和 IK，并将筛选后的关节目标送入增量式 PID。IK 失败会停止当前笛卡尔轨迹，并在 STATUS 的 `error_code` 中报告参数错误。
+
 ## 接收状态机
 
 UART 中断只负责把字节放入环形缓存；通信任务从缓存取字节并交给协议解析器。解析器按帧头、固定头、长度、负载和 CRC 顺序工作。
 
+QEMU CMSDK UART 兼容路径由 10 ms 通信任务服务单字节 FIFO，且当前没有 RTS/CTS 流控。因此 QEMU 端到端脚本使用 20 ms 分字节发送；无间隔或 1 ms 突发写入会在 FIFO 被服务前覆盖字节，不属于有效链路输入。实际硬件 UART 中断路径不受该 QEMU 模型限制。
+
 - 帧头错误：丢弃当前字节并重新寻找 `AA`；
 - 长度超过 128：立即丢弃当前帧；
 - CRC 错误：丢弃当前帧并记录接收错误，不单独发送错误响应；
-- 字节间隔超过 100 ms：清空半帧并记录接收错误，不单独发送超时响应；
+- 字节间隔超过 500 ms：清空半帧并记录接收错误，不单独发送超时响应。500 ms 为 QEMU/host 调度抖动预留裕量；实际硬件可按链路速率收紧该阈值；
 - 序号与上一帧相同：标记重复帧，不重复执行运动命令；
 - 环形缓存满：`robot_uart_rx_isr_push()` 返回 `ROBOT_UART_FULL`，调用方停止继续压入当前输入；当前 QEMU 接收路径不会为该情况单独发送错误响应。
 
