@@ -162,12 +162,15 @@ def run(root, count, seed):
     status_counts = {}
     failure_counts = {}
     stratum_counts = {}
+    stratum_errors = {}
 
     for case_index, joints in enumerate(cases):
         stratum = case_stratum(case_index, count)
         stratum_counts.setdefault(stratum, {"成功": 0, "候选生成失败": 0,
                                              "全部候选奇异": 0,
                                              "其他筛选失败": 0})
+        stratum_errors.setdefault(stratum, {"fk_p": [], "fk_r": [],
+                                            "ik_p": [], "ik_r": []})
         start = time.perf_counter_ns()
         reference_pose = np.asarray(reference.fkine(joints).A, dtype=float)
         reference_fk_times.append((time.perf_counter_ns() - start) / 1000.0)
@@ -182,6 +185,8 @@ def run(root, count, seed):
         fk_position_errors.append(float(np.linalg.norm(
             embedded_matrix[:3, 3] - reference_pose[:3, 3])))
         fk_rotation_errors.append(rotation_error(embedded_matrix, reference_pose))
+        stratum_errors[stratum]["fk_p"].append(fk_position_errors[-1])
+        stratum_errors[stratum]["fk_r"].append(fk_rotation_errors[-1])
 
         target = pose_to_ctypes(reference_pose)
         solutions = (Solution * 8)()
@@ -213,6 +218,8 @@ def run(root, count, seed):
                 ik_position_errors.append(float(np.linalg.norm(
                     selected_pose[:3, 3] - reference_pose[:3, 3])))
                 ik_rotation_errors.append(rotation_error(selected_pose, reference_pose))
+                stratum_errors[stratum]["ik_p"].append(ik_position_errors[-1])
+                stratum_errors[stratum]["ik_r"].append(ik_rotation_errors[-1])
             else:
                 failure_reason = ("全部候选奇异" if select_status == -3
                                   else "其他筛选失败")
@@ -238,6 +245,19 @@ def run(root, count, seed):
           f"状态分布 {status_counts}")
     for stratum, counts in stratum_counts.items():
         print(f"  {stratum}: {counts}")
+    for stratum, errors in stratum_errors.items():
+        if not errors["ik_p"]:
+            print(f"  {stratum} 误差：无通过筛选的样本")
+            continue
+        print(f"  {stratum} 误差：FK 位置 均值 "
+              f"{statistics.fmean(errors['fk_p']):.3g} "
+              f"最大 {max(errors['fk_p']):.3g} m；"
+              f"FK 姿态 均值 {statistics.fmean(errors['fk_r']):.3g} "
+              f"最大 {max(errors['fk_r']):.3g} rad；"
+              f"IK 选中解位置 均值 {statistics.fmean(errors['ik_p']):.3g} "
+              f"最大 {max(errors['ik_p']):.3g} m；"
+              f"IK 姿态 均值 {statistics.fmean(errors['ik_r']):.3g} "
+              f"最大 {max(errors['ik_r']):.3g} rad")
     print(f"  失败统计：{failure_counts}")
 
 
