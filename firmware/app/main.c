@@ -11,32 +11,14 @@
 #include "scheduler_validation.h"
 #include "robot_tasks.h"
 
-volatile uint32_t task_counter;
-volatile uint32_t timer_callback_counter;
-volatile uint32_t gpio_output_level;
 static robot_uart_rx_ring_t communication_rx;
 static robot_uart_tx_ring_t communication_tx;
 static robot_communication_t communication;
 
 static void gpio_timer_callback(void *context)
 {
-    bsp_gpio_level_t level;
-
     (void) context;
     bsp_gpio_toggle(0U);
-    bsp_gpio_read(0U, &level);
-    gpio_output_level = (uint32_t) level;
-    timer_callback_counter++;
-}
-
-static void heartbeat_task(void *argument)
-{
-    (void) argument;
-
-    for (;;) {
-        task_counter++;
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
 }
 
 int main(void)
@@ -49,24 +31,19 @@ int main(void)
     scheduler_validation_start();
 #endif
 
-    if (xTaskCreate(robot_communication_task, "communication", 256,
+    if (xTaskCreate(robot_communication_task, "communication", 2048,
         &communication, 3, NULL) != pdPASS) {
         for (;;) {
         }
     }
 
-    if (xTaskCreate(robot_tasks_bootstrap_task, "task_init", 256, NULL,
+    if (xTaskCreate(robot_tasks_bootstrap_task, "task_init", 512, NULL,
         4, NULL) != pdPASS) {
         for (;;) {
         }
     }
 
     if (bsp_timer_start_periodic(100U, gpio_timer_callback, NULL) != BSP_TIMER_OK) {
-        for (;;) {
-        }
-    }
-
-    if (xTaskCreate(heartbeat_task, "heartbeat", 256, NULL, 1, NULL) != pdPASS) {
         for (;;) {
         }
     }

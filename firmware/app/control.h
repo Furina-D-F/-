@@ -47,6 +47,13 @@ robot_app_result_t robot_control_set_velocity_command(
     float velocity_rad_s
 );
 void robot_control_update_velocity_control(float dt_s);
+void robot_control_set_simulation_feedback(
+    const float position_rad[ROBOT_CONTROL_JOINT_COUNT],
+    const float velocity_rad_s[ROBOT_CONTROL_JOINT_COUNT]
+);
+void robot_control_get_velocity_commands(
+    float velocity_rad_s[ROBOT_CONTROL_JOINT_COUNT]
+);
 void robot_control_get_status(robot_control_status_t *status);
 
 #endif

@@ -3,6 +3,9 @@
 #include <math.h>
 
 #define CARTESIAN_EPSILON 1.0e-6f
+#define CARTESIAN_APF_STEP_MARGIN 1.0e-3f
+#define CARTESIAN_APF_RETURN_FRACTION 0.20f
+#define CARTESIAN_APF_RETURN_STEP_M 0.01f
 #define CARTESIAN_PI ROBOT_KINEMATICS_PI
 
 typedef struct {
@@ -210,6 +213,8 @@ static robot_cartesian_status_t plan_common(
         trajectory->current_joint[index] = start_joint[index];
         trajectory->output_joint[index] = start_joint[index];
     }
+    trajectory->previous_nominal_valid = 0U;
+    trajectory->previous_deviation_valid = 0U;
     return ROBOT_CARTESIAN_OK;
 }
 
@@ -307,6 +312,7 @@ robot_cartesian_status_t robot_cartesian_update(
     float current_position[3];
     float nominal_position[3];
     float adjusted_position[3];
+    float apf_step_limit = 0.0f;
     if (trajectory == 0 || output_joint == 0 || !isfinite(dt_s)
         || dt_s <= 0.0f) {
         return ROBOT_CARTESIAN_INVALID_ARGUMENT;
@@ -331,13 +337,78 @@ robot_cartesian_status_t robot_cartesian_update(
         current_position[index] = current_pose.value[index][3];
         nominal_position[index] = target.value[index][3];
     }
+    {
+        float advance = 0.0f;
+        if (trajectory->previous_nominal_valid != 0U) {
+            for (uint8_t index = 0U; index < 3U; index++) {
+                float delta = nominal_position[index]
+                    - trajectory->previous_nominal[index];
+                advance = sqrtf(advance * advance + delta * delta);
+            }
+        }
+        for (uint8_t index = 0U; index < 3U; index++) {
+            trajectory->previous_nominal[index] = nominal_position[index];
+        }
+        trajectory->previous_nominal_valid = 1U;
+        apf_step_limit = advance + CARTESIAN_APF_STEP_MARGIN;
+    }
     if (robot_apf_adjust_target(&trajectory->apf,
         current_position, nominal_position, adjusted_position) != 0) {
         trajectory->active = 0U;
         return ROBOT_CARTESIAN_IK_FAILED;
     }
-    for (uint8_t index = 0U; index < 3U; index++) {
-        target.value[index][3] = adjusted_position[index];
+    {
+        float deviation[3];
+        float change[3];
+        float change_norm = 0.0f;
+        for (uint8_t index = 0U; index < 3U; index++) {
+            float base = trajectory->previous_deviation_valid != 0U
+                ? trajectory->previous_deviation[index] : 0.0f;
+            deviation[index] = adjusted_position[index]
+                - nominal_position[index];
+            change[index] = deviation[index] - base;
+            change_norm = sqrtf(change_norm * change_norm
+                + change[index] * change[index]);
+        }
+
+        {
+            float previous_norm = 0.0f;
+            float deviation_norm = 0.0f;
+            float limit = apf_step_limit;
+
+            for (uint8_t index = 0U; index < 3U; index++) {
+                float base = trajectory->previous_deviation_valid != 0U
+                    ? trajectory->previous_deviation[index] : 0.0f;
+                previous_norm = sqrtf(previous_norm * previous_norm
+                    + base * base);
+                deviation_norm = sqrtf(deviation_norm * deviation_norm
+                    + deviation[index] * deviation[index]);
+            }
+            if (deviation_norm < previous_norm
+                && apf_step_limit < CARTESIAN_APF_RETURN_STEP_M) {
+                limit = CARTESIAN_APF_RETURN_STEP_M;
+            }
+            if (change_norm > limit && change_norm > 0.0f) {
+                for (uint8_t index = 0U; index < 3U; index++) {
+                    float base = trajectory->previous_deviation_valid != 0U
+                        ? trajectory->previous_deviation[index] : 0.0f;
+                    deviation[index] = base
+                        + change[index] * limit / change_norm;
+                }
+            }
+        }
+
+        if (ratio > 1.0f - CARTESIAN_APF_RETURN_FRACTION) {
+            float fade = (1.0f - ratio) / CARTESIAN_APF_RETURN_FRACTION;
+            for (uint8_t index = 0U; index < 3U; index++) {
+                deviation[index] *= fade;
+            }
+        }
+        for (uint8_t index = 0U; index < 3U; index++) {
+            trajectory->previous_deviation[index] = deviation[index];
+            target.value[index][3] = nominal_position[index] + deviation[index];
+        }
+        trajectory->previous_deviation_valid = 1U;
     }
     status = robot_kinematics_ik(&target, trajectory->current_joint,
         solutions, &count);

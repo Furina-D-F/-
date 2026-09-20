@@ -30,6 +30,10 @@ typedef struct {
     float period_s;
     float current_joint[ROBOT_CARTESIAN_JOINT_COUNT];
     float output_joint[ROBOT_CARTESIAN_JOINT_COUNT];
+    float previous_nominal[3];
+    float previous_deviation[3];
+    uint8_t previous_nominal_valid;
+    uint8_t previous_deviation_valid;
     float arc_angle_rad;
     uint8_t direction;
     uint8_t active;

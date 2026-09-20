@@ -90,6 +90,10 @@ $$p_d\xrightarrow{\mathrm{APF}(p_c,p_d)}p'_d\xrightarrow{IK}q_{k+1}.$$
 
 APF 修正发生在笛卡尔几何路径和 IK 之间，不直接对关节角加扰动。
 
+除 APF 自身的两处限制（吸引项不超过剩余距离；偏移量每周期变化不超过名义推进量加余量）
+外，本模块还在 $\|p'_d-p_d\|$ 上做同样的每周期变化率限制，两处共同保证修正后的目标不会
+在相邻周期来回跳变。细节见 [artificial_potential_field.md](artificial_potential_field.md)。
+
 返回值含义：
 
 - `ROBOT_CARTESIAN_OK`：输出了一个中间关节指令；

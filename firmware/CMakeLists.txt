@@ -54,6 +54,7 @@ target_compile_options(robot_firmware PRIVATE
 target_compile_definitions(robot_firmware PRIVATE
     ROBOT_QEMU=1
     ROBOT_FREERTOS=1
+    ROBOT_QEMU_EXTERNAL_PLANT=1
 )
 
 target_include_directories(robot_firmware PRIVATE

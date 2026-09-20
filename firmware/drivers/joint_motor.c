@@ -1,5 +1,7 @@
 #include "joint_motor.h"
 
+#include <math.h>
+
 typedef struct {
     float position_rad;
     float velocity_rad_s;
@@ -15,6 +17,10 @@ typedef struct {
 #define ROBOT_TWO_PI (2.0f * ROBOT_PI)
 
 static robot_joint_instance_t joints[ROBOT_JOINT_COUNT];
+
+#ifdef ROBOT_QEMU_EXTERNAL_PLANT
+static int simulation_feedback_active;
+#endif
 
 static int valid_id(uint8_t id)
 {
@@ -32,7 +38,48 @@ void robot_joint_init(uint8_t id)
         joints[id].velocity_command_rad_s = 0.0f;
         joints[id].velocity_control_enabled = 0;
         joints[id].encoder_count = 0;
+#ifdef ROBOT_QEMU_EXTERNAL_PLANT
+        simulation_feedback_active = 0;
+#endif
     }
+}
+
+void robot_joint_simulation_set_feedback(
+    uint8_t id,
+    float position_rad,
+    float velocity_rad_s
+)
+{
+#ifdef ROBOT_QEMU_EXTERNAL_PLANT
+    if (valid_id(id) && isfinite(position_rad) && isfinite(velocity_rad_s)) {
+        joints[id].position_rad = position_rad;
+        joints[id].velocity_rad_s = velocity_rad_s;
+        joints[id].encoder_count = (int32_t) ((position_rad
+            * (float) ROBOT_JOINT_ENCODER_COUNTS_PER_REV) / ROBOT_TWO_PI);
+        simulation_feedback_active = 1;
+    }
+#else
+    (void) id;
+    (void) position_rad;
+    (void) velocity_rad_s;
+#endif
+}
+
+float robot_joint_get_velocity_command(uint8_t id)
+{
+    if (!valid_id(id)) {
+        return 0.0f;
+    }
+    return joints[id].velocity_command_rad_s;
+}
+
+int robot_joint_simulation_feedback_active(void)
+{
+#ifdef ROBOT_QEMU_EXTERNAL_PLANT
+    return simulation_feedback_active;
+#else
+    return 0;
+#endif
 }
 
 robot_joint_result_t robot_joint_set_target(
@@ -145,6 +192,11 @@ void robot_joint_update_velocity_control(float dt_s)
         if (joints[id].velocity_control_enabled == 0) {
             continue;
         }
+    #ifdef ROBOT_QEMU_EXTERNAL_PLANT
+        if (simulation_feedback_active != 0) {
+            continue;
+        }
+    #endif
         joints[id].velocity_rad_s = joints[id].velocity_command_rad_s;
         joints[id].position_rad += joints[id].velocity_rad_s * dt_s;
         joints[id].encoder_count = (int32_t) ((joints[id].position_rad

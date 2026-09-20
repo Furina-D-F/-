@@ -17,6 +17,6 @@
 
     Refer to 'inc/ur_macro.xacro' for more information.
   -->
-  <xacro:include filename="/home/shijie/robot/simulation/models/ur5/ur_description/urdf/inc/ur7e_macro.xacro"/>
+  <xacro:include filename="$(find ur_description)/urdf/inc/ur7e_macro.xacro"/>
   <xacro:ur7e_robot prefix="" />
 </robot>

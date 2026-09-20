@@ -39,7 +39,7 @@ $$u_k=clamp(u_{k-1}+\Delta u_k,-u_{max},u_{max})$$
 
 使用 `simulation/scripts/tune_joint_pid.py` 对 PyBullet UR5 第一个活动关节进行闭环整定。仿真周期为 `1/240 s`，目标位置为 `0.8 rad`，输出限幅 `2.0 rad/s`，积分限幅 `1.0`。候选参数按 RMSE、最大超调和末端误差评分。
 
-当前整定结果见 [joint_pid_tuning_report.md](joint_pid_tuning_report.md)：
+当前整定结果（完整候选表见[运动学测试文档](kinematics_test_report.md)）：
 
 ```text
 Kp = 2.5

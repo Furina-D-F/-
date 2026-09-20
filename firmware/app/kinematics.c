@@ -302,12 +302,17 @@ robot_kinematics_status_t robot_kinematics_ik(
         return ROBOT_KINEMATICS_NO_SOLUTION;
     }
 
-    for (uint8_t shoulder = 0U; shoulder < 2U; shoulder++) {
-        float shoulder_sign = shoulder == 0U ? 1.0f : -1.0f;
+    for (uint8_t shoulder = 0U; shoulder < 4U; shoulder++) {
+        float shoulder_sign = (shoulder & 1U) == 0U ? 1.0f : -1.0f;
+        float shoulder_offset = shoulder >= 2U ? ROBOT_KINEMATICS_PI : 0.0f;
         q1_base = atan2f(
             UR5_D6 * target[1][2] - target[1][3],
             UR5_D6 * target[0][2] - target[0][3]
-        ) + shoulder_sign * asinf(clamp_unit(UR5_D4 / radial));
+        ) + shoulder_offset + shoulder_sign * asinf(clamp_unit(UR5_D4 / radial));
+        if (shoulder >= 2U) {
+            q1_base = normalize_near(
+                q1_base, current_joint != 0 ? current_joint[0] : q1_base);
+        }
         c5 = (target[0][3] * sinf(q1_base)
             - target[1][3] * cosf(q1_base) - UR5_D4) / UR5_D6;
         if (c5 < -1.0f - KINEMATICS_EPSILON || c5 > 1.0f + KINEMATICS_EPSILON) {
@@ -386,6 +391,9 @@ robot_kinematics_status_t robot_kinematics_ik(
                         || duplicate_solution(solutions, solution_count, q)) {
                         continue;
                     }
+                }
+                if (solution_count >= ROBOT_KINEMATICS_MAX_SOLUTIONS) {
+                    continue;
                 }
                 for (uint8_t index = 0U; index < 6U; index++) {
                     solutions[solution_count].joint[index] = q[index];

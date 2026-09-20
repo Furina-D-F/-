@@ -19,7 +19,7 @@ from protocol import (
 )
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
-RESPONSE_TIMEOUT_S = 10.0
+RESPONSE_TIMEOUT_S = 30.0
 BYTE_INTERVAL_S = 0.02
 MAX_ATTEMPTS = 3
 

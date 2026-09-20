@@ -18,6 +18,11 @@ def run_trial(kp, ki, kd, target, duration, dt, joint_index=0):
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.setTimeStep(dt)
     robot = p.loadURDF(str(ROOT / "simulation/models/ur5/ur5.urdf"), useFixedBase=True)
+    # 官方 UR5 把 base/flange/tool0 定义为无质量坐标帧，PyBullet 会回退成 1 kg，
+    # 使腕部多出 2 kg；清零后总质量与官方 21.05 kg 一致。
+    for index in range(p.getNumJoints(robot)):
+        if p.getJointInfo(robot, index)[12].decode() in ("base", "flange", "tool0"):
+            p.changeDynamics(robot, index, mass=0.0)
     active_joints = [
         index for index in range(p.getNumJoints(robot))
         if p.getJointInfo(robot, index)[2] in (p.JOINT_REVOLUTE, p.JOINT_PRISMATIC)
@@ -51,7 +56,8 @@ def run_trial(kp, ki, kd, target, duration, dt, joint_index=0):
             joint_id,
             p.VELOCITY_CONTROL,
             targetVelocity=output,
-            force=100.0,
+            # 官方 URDF 自带该关节的 effort 上限。
+            force=p.getJointInfo(robot, joint_id)[10],
         )
         p.stepSimulation()
         if not initialized:
@@ -85,7 +91,6 @@ def run_trial(kp, ki, kd, target, duration, dt, joint_index=0):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default="docs/joint_pid_tuning_report.md")
     parser.add_argument("--target", type=float, default=0.8)
     parser.add_argument("--duration", type=float, default=2.0)
     parser.add_argument("--dt", type=float, default=1.0 / 240.0)
@@ -103,31 +108,14 @@ def main():
         item["rmse"] + 0.5 * item["max_overshoot"] + item["steady_error"],
         item["settling_time"],
     ))
-    report = [
-        "# 单关节 PID 参数整定报告",
-        "",
-        "- 仿真器：PyBullet UR5，固定基座，第 1 关节。",
-        f"- 目标位置：`{args.target:.3f} rad`，采样周期：`{args.dt:.6f} s`。",
-        "- 控制器：增量式 PID，输出限幅 `2.0 rad/s`，积分限幅 `1.0`，死区 `0 rad`。",
-        "- 评分：`RMSE + 0.5 * max_overshoot + steady_error`，并以调节时间作次级排序。",
-        "",
-        "| Kp | Ki | Kd | RMSE (rad) | 最大超调 (rad) | 稳态误差 (rad) | 调节时间 (s) |",
-        "|---:|---:|---:|---:|---:|---:|---:|",
-    ]
+    print(f"单关节 PID 整定：目标 {args.target:.3f} rad，采样周期 {args.dt:.6f} s")
+    print("     Kp      Ki      Kd      RMSE      最大超调   稳态误差   调节时间")
     for item in results:
-        report.append(
-            f"| {item['kp']:.3f} | {item['ki']:.3f} | {item['kd']:.3f} | "
-            f"{item['rmse']:.6f} | {item['max_overshoot']:.6f} | "
-            f"{item['steady_error']:.6f} | {item['settling_time']:.3f} |"
-        )
-    report.extend([
-        "",
-        f"推荐参数：`Kp={best['kp']:.3f}, Ki={best['ki']:.3f}, Kd={best['kd']:.3f}`。",
-        "推荐值适用于当前仿真模型、输出限幅和 240 Hz 采样条件；更换负载、摩擦或控制周期后应重新整定。",
-    ])
-    output = ROOT / args.output
-    output.write_text("\n".join(report) + "\n", encoding="utf-8")
-    print("\n".join(report))
+        print(f"  {item['kp']:6.3f}  {item['ki']:6.3f}  {item['kd']:6.3f}  "
+              f"{item['rmse']:.6f}  {item['max_overshoot']:.6f}  "
+              f"{item['steady_error']:.6f}  {item['settling_time']:.3f}")
+    print(f"推荐参数：Kp={best['kp']:.3f}, Ki={best['ki']:.3f}, Kd={best['kd']:.3f}")
+    print("该组参数适用于当前模型、输出限幅与 240 Hz 采样；更换负载/摩擦/控制周期后需重新整定。")
 
 
 if __name__ == "__main__":

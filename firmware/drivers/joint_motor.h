@@ -30,6 +30,13 @@ robot_joint_result_t robot_joint_set_velocity_command(
     uint8_t id,
     float velocity_rad_s
 );
+void robot_joint_simulation_set_feedback(
+    uint8_t id,
+    float position_rad,
+    float velocity_rad_s
+);
+float robot_joint_get_velocity_command(uint8_t id);
+int robot_joint_simulation_feedback_active(void);
 robot_joint_result_t robot_joint_read_encoder(uint8_t id, int32_t *encoder_count);
 robot_joint_result_t robot_joint_get_position(uint8_t id, float *position_rad);
 robot_joint_result_t robot_joint_get_velocity(uint8_t id, float *velocity_rad_s);

@@ -42,6 +42,9 @@ void robot_tasks_bootstrap_task(void *argument);
 robot_tasks_status_t robot_tasks_submit_motion(const motion_command_t *command);
 robot_tasks_status_t robot_tasks_submit_cartesian(
     const robot_path_command_t *command);
+robot_tasks_status_t robot_tasks_set_obstacles(
+    const robot_apf_obstacle_t *obstacles, uint8_t count);
+void robot_tasks_run_simulation_cycle(void);
 void robot_tasks_get_health(robot_tasks_health_t *health);
 
 #endif

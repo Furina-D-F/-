@@ -127,6 +127,17 @@ def make_cases(count, seed):
     return cases
 
 
+def case_stratum(index, count):
+    quarter = count // 4
+    if index < quarter:
+        return "常规工作区"
+    if index < 2 * quarter:
+        return "接近关节边界"
+    if index < 3 * quarter:
+        return "限位附近"
+    return "q3/q5 近奇异区域"
+
+
 def summarize(values):
     if not values:
         return {"mean": None, "max": None, "p95": None}
@@ -135,7 +146,7 @@ def summarize(values):
             "p95": float(np.percentile(values, 95))}
 
 
-def run(root, count, seed, output):
+def run(root, count, seed):
     embedded = load_embedded(root)
     reference = make_reference_robot()
     cases = make_cases(count, seed)
@@ -149,8 +160,14 @@ def run(root, count, seed, output):
     ik_success = 0
     selection_success = 0
     status_counts = {}
+    failure_counts = {}
+    stratum_counts = {}
 
-    for joints in cases:
+    for case_index, joints in enumerate(cases):
+        stratum = case_stratum(case_index, count)
+        stratum_counts.setdefault(stratum, {"成功": 0, "候选生成失败": 0,
+                                             "全部候选奇异": 0,
+                                             "其他筛选失败": 0})
         start = time.perf_counter_ns()
         reference_pose = np.asarray(reference.fkine(joints).A, dtype=float)
         reference_fk_times.append((time.perf_counter_ns() - start) / 1000.0)
@@ -183,6 +200,7 @@ def run(root, count, seed, output):
                 ctypes.byref(best_index), ctypes.byref(score))
             if select_status == 0:
                 selection_success += 1
+                stratum_counts[stratum]["成功"] += 1
                 selected = np.array(solutions[best_index.value].joint, dtype=float)
                 selected_array = (ctypes.c_float * 6)(*map(float, selected))
                 selected_embedded_pose = RobotPose()
@@ -195,55 +213,40 @@ def run(root, count, seed, output):
                 ik_position_errors.append(float(np.linalg.norm(
                     selected_pose[:3, 3] - reference_pose[:3, 3])))
                 ik_rotation_errors.append(rotation_error(selected_pose, reference_pose))
+            else:
+                failure_reason = ("全部候选奇异" if select_status == -3
+                                  else "其他筛选失败")
+                stratum_counts[stratum][failure_reason] += 1
+                failure_counts[failure_reason] = failure_counts.get(failure_reason, 0) + 1
+        else:
+            stratum_counts[stratum]["候选生成失败"] += 1
+            failure_counts["候选生成失败"] = failure_counts.get("候选生成失败", 0) + 1
 
-    report = []
-    report.append("# UR5 运动学精度对比分析")
-    report.append("")
-    report.append(f"- 测试样本：{count} 组，随机种子：{seed}")
-    report.append("- 基准：Robotics Toolbox Python `1.4.2`，使用项目文档中的精确标准 DH 参数构造 `DHRobot`。")
-    report.append("- 被测实现：`firmware/app/kinematics.c`，通过 host `ctypes` 调用，与 ARM 固件共用源码。")
-    report.append("- 样本分层：常规工作区、接近关节边界、限位附近、q3/q5 近奇异区域，各占约四分之一。")
-    report.append("")
-    report.append("## 结果")
-    report.append("")
-    report.append("| 指标 | 均值 | P95 | 最大值 | 单位 |")
-    report.append("|---|---:|---:|---:|---|")
+    print(f"运动学精度验证：{count} 组样本，种子 {seed}")
     for name, values, unit in [
         ("FK 位置误差", fk_position_errors, "m"),
         ("FK 姿态误差", fk_rotation_errors, "rad"),
         ("IK 选中解位置误差", ik_position_errors, "m"),
         ("IK 选中解姿态误差", ik_rotation_errors, "rad"),
         ("FK 求解耗时", fk_times, "us"),
-        ("Robotics Toolbox FK 耗时", reference_fk_times, "us"),
         ("IK 求解耗时", ik_times, "us"),
     ]:
         stats = summarize(values)
-        report.append(f"| {name} | {stats['mean']:.6g} | {stats['p95']:.6g} | "
-                      f"{stats['max']:.6g} | {unit} |")
-    report.append("")
-    report.append(f"- IK 候选生成成功率：`{ik_success}/{count}` "
-                  f"({100.0 * ik_success / count:.2f}%)")
-    report.append(f"- 最优解筛选成功率：`{selection_success}/{count}` "
-                  f"({100.0 * selection_success / count:.2f}%)")
-    report.append(f"- IK 状态分布：`{status_counts}`，其中 `0` 为 `ROBOT_KINEMATICS_OK`。")
-    report.append("")
-    report.append("## 分析")
-    report.append("")
-    report.append("FK 误差直接衡量嵌入式标准 DH 链与 Robotics Toolbox 同一模型的数值一致性；IK 误差使用嵌入式筛选候选回代到嵌入式 FK 后，与基准目标位姿比较。")
-    report.append("耗时为 Linux host 上的 C 共享库调用耗时，不能等同于 Cortex-M4F 实时耗时，只用于比较算法调用开销趋势；部署性能仍应结合 QEMU 或硬件 cycle counter 测量。")
-    report.append("")
-    pathlib.Path(output).write_text("\n".join(report) + "\n", encoding="utf-8")
-    print("\n".join(report))
+        print(f"  {name}: 均值 {stats['mean']:.6g} {unit}"
+              f"  P95 {stats['p95']:.6g}  最大 {stats['max']:.6g}")
+    print(f"  IK 候选生成 {ik_success}/{count}，最优解筛选 {selection_success}/{count}，"
+          f"状态分布 {status_counts}")
+    for stratum, counts in stratum_counts.items():
+        print(f"  {stratum}: {counts}")
+    print(f"  失败统计：{failure_counts}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=128)
     parser.add_argument("--seed", type=int, default=20260911)
-    parser.add_argument("--output", default="docs/kinematics_validation_report.md")
     args = parser.parse_args()
-    root = pathlib.Path(__file__).resolve().parents[2]
-    run(root, args.count, args.seed, root / args.output)
+    run(pathlib.Path(__file__).resolve().parents[2], args.count, args.seed)
 
 
 if __name__ == "__main__":

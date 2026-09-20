@@ -87,6 +87,23 @@ int robot_apf_adjust_target(
         force[axis] = config->attractive_gain
             * (nominal_target[axis] - current_position[axis]);
     }
+    
+    {
+        float attractive_norm = norm3(force);
+        float nominal_distance = 0.0f;
+
+        for (uint8_t axis = 0U; axis < 3U; axis++) {
+            float delta = nominal_target[axis] - current_position[axis];
+            nominal_distance = sqrtf(nominal_distance * nominal_distance
+                + delta * delta);
+        }
+        if (attractive_norm > nominal_distance && attractive_norm > 0.0f) {
+            float scale = nominal_distance / attractive_norm;
+            for (uint8_t axis = 0U; axis < 3U; axis++) {
+                force[axis] *= scale;
+            }
+        }
+    }
 
     for (uint8_t index = 0U; index < config->obstacle_count; index++) {
         const robot_apf_obstacle_t *obstacle = &config->obstacles[index];

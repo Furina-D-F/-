@@ -29,6 +29,11 @@ def load_scene(gui):
         str(PROJECT_ROOT / "simulation" / "models" / "ur5" / "ur5.urdf"),
         useFixedBase=True,
     )
+    # 官方 UR5 把 base/flange/tool0 定义为无质量坐标帧，PyBullet 会回退成 1 kg，
+    # 使腕部多出 2 kg；清零后总质量与官方 21.05 kg 一致。
+    for index in range(p.getNumJoints(robot_id)):
+        if p.getJointInfo(robot_id, index)[12].decode() in ("base", "flange", "tool0"):
+            p.changeDynamics(robot_id, index, mass=0.0)
     joint_ids = [
         index for index in range(p.getNumJoints(robot_id))
         if p.getJointInfo(robot_id, index)[2] in (p.JOINT_REVOLUTE, p.JOINT_PRISMATIC)

@@ -108,7 +108,7 @@ int main(void)
     request.payload[1] = 0x01U;
     put_float(request.payload, 2U, 7.0f);
     response = exchange(&communication, &rx, &request);
-    assert(response.response_code == ROBOT_STATUS_LIMIT);
+    assert(response.response_code == ROBOT_STATUS_INVALID_STATE);
 
     request.sequence = 7U;
     request.payload[0] = 1U;

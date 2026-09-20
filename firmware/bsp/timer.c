@@ -1,6 +1,7 @@
 #include "timer.h"
 
 #include "FreeRTOS.h"
+#include "task.h"
 
 typedef struct {
     TickType_t period_ticks;
@@ -14,6 +15,24 @@ static bsp_timer_context_t timer_context;
 
 __attribute__((weak)) void robot_tasks_tick_isr(void)
 {
+}
+
+void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
+{
+    (void) task;
+    (void) task_name;
+    taskDISABLE_INTERRUPTS();
+    for (;;) {
+    }
+}
+
+void vApplicationMallocFailedHook(void)
+{
+    /* Heap exhaustion used to silently drop the PID and status tasks, which
+     * looked like a frozen robot; stop loudly instead. */
+    taskDISABLE_INTERRUPTS();
+    for (;;) {
+    }
 }
 
 void vApplicationTickHook(void)

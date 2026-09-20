@@ -1,22 +1,23 @@
 # 六轴工业机器人嵌入式运动控制固件开发与仿真验证
 
-## 1. 更新日志
-
-- v1.6 增加静态工业场景和[人工势场避障](docs/artificial_potential_field.md)：固件在笛卡尔轨迹更新前修正末端目标，PyBullet 加载共享长方体障碍物并验证反馈、碰撞和轨迹显示。
-- 另：现在启动仿真时初始化/创建队列任务QEMU有概率响应超时，该问题目前无法稳定复现，新增测试文件，测试独立QEMU冷启动、握手、双关节MOTION，推测为windows11环境下virtualbox UBUNTU 22.04下QEMU本身环境不稳定导致
-- v1.5 扩展通信协议，新增笛卡尔直线/圆弧命令；路径任务规划后由 PID 任务周期调用 IK，并将关节目标接入速度执行器和 STATUS 错误反馈。
-- 使用Robotics Toolbox生成共128组覆盖各项区间的测试用例，测试结果以及对比在[文档](docs/kinematics_validation_report.md)精度对比中
-- v1.4 完成 [FreeRTOS 多任务架构](docs/freertos_task_architecture.md)：拆分通信、路径、PID 和状态检测任务，增加运动命令队列、状态邮箱和健康统计；[PID 任务](docs/joint_pid.md)由 SysTick ISR 通过任务通知以 100 Hz 唤醒；新增了untiy单元测试用例，完成 UR5 FK/IK、[关节/笛卡尔轨迹](docs/cartesian_trajectory.md)、增量式 PID、PyBullet 整定及 34 项 native/ARM/QEMU Unity 回归。
-- v1.3 明确协议错误与应用业务错误的边界，新增应用参数非法、控制状态非法和关节限位响应码；Unity 驱动测试扩展为 native 与 ARM/QEMU 两条执行路径，16 个用例在两种环境均通过；补充[通信协议](docs/communication_protocol.md)、[环境依赖](docs/environment_setup.md)和[测试报告](docs/test_report.md)。
-- v1.2 六路关节实例化，[驱动抽象](firmware/drivers/joint_motor.c)，新增QEMU[仿真串口驱动](firmware/bsp/qemu_uart.c)，完成Python客户端到QEMU仿真到FreeRTOS固件的串口通信链路，新增[Python CLI](simulation/scripts/robot_cli.py)，直接连接到固件，并通过指令实现机器人运动（Pybullet可视化已实现），支持通信帧实时返回机器人状态；接入unity测试框架，设计包含UART，协议解析，电机驱动接口编写覆盖正常功能，边界参数异常等共16个单元测试用例，测试全部通过，具体[测试报告](docs/test_report.md)；初步推导UR5 DH参数，坐标体系变换方法，运动学，八解等，具体查看[docs/kinematics.md](docs/kinematics.md)
-- v1.1 更新[技术文档](docs/system_design.md)明确各层功能边界，接口定义，I/O约束和返回值，明确通信层数据结构，返回的错误码；增加了多任务调度验证[代码](firmware/app/scheduler_validation.c)；实现了python到仿真端的双向通信验证[代码](firmware/tests/communication_link_host.c)
-- v1.0 基础的环境配置和仿真实现，编写技术文档，设计通信协议，驱动抽象。
-
-
-## 2. 项目背景
-
+## 1. 项目介绍
 
 本项目围绕“六轴工业机器人嵌入式运动控制固件开发与仿真验证”展开，依托 ARM Cortex-M4 MCU 仿真环境和 PyBullet 机器人仿真平台，构建一套完整的工业机器人控制开发框架，从系统架构、驱动封装、通信协议、运动学算法、任务调度到仿真验证进行工程化设计与实现。
+
+ ![S4 平放 S 型搬运回放动图](docs/images/pick_place_s4_replay.gif)
+
+ 另：更新日志已放到最后
+
+
+## 2. 文档
+
+- 系统设计：[system_design.md](docs/system_design.md)
+- 环境：[environment_setup.md](docs/environment_setup.md)
+- 通信协议：[communication_protocol.md](docs/communication_protocol.md)
+- 功能测试与性能测试：[system_test_report.md](docs/system_test_report.md)、[kinematics_test_report.md](docs/kinematics_test_report.md)
+- 关节路径规划与人工避障：[trajectory_planning.md](docs/trajectory_planning.md)、[artificial_potential_field.md](docs/artificial_potential_field.md)
+- 多任务系统：[freertos_task_architecture.md](docs/freertos_task_architecture.md)
+- 运动学与 笛卡尔轨迹规划：[kinematics.md](docs/kinematics.md)、[cartesian_trajectory.md](docs/cartesian_trajectory.md)
 
 
 ## 3. 项目目标
@@ -113,10 +114,11 @@ robot/
 │   ├── trajectory_planning.md
 │   ├── cartesian_trajectory.md
 │   ├── joint_pid.md
-│   ├── joint_pid_tuning_report.md
+│   ├── artificial_potential_field.md
 │   ├── freertos_task_architecture.md
 │   ├── system_design.md
-│   └── test_report.md
+│   ├── kinematics_test_report.md
+│   └── system_test_report.md
 ├── external/
 │   └── bullet3/
 ├── firmware/
@@ -147,10 +149,11 @@ robot/
 - trajectory_planning.md：关节空间三次、五次和梯形速度规划
 - cartesian_trajectory.md：笛卡尔直线/圆弧插补及周期 IK
 - joint_pid.md：单关节增量式 PID、限幅和抗积分饱和
-- joint_pid_tuning_report.md：PyBullet PID 参数整定结果
 - freertos_task_architecture.md：FreeRTOS 多任务、队列和 ISR 通知架构
 - system_design.md：系统总体设计、接口定义和模块分层说明
-- test_report.md：native 与 ARM/QEMU Unity 测试及链路回归报告
+- artificial_potential_field.md：笛卡尔目标的人工势场避障修正
+- kinematics_test_report.md：运动学与控制精度测试（FK/IK 精度、关节 PID 整定、笛卡尔轨迹闭环性能）
+- system_test_report.md：系统功能测试（驱动、协议、边界与错误输入、通信、集成与搬运任务全流程）
 
 ### external/
 外部依赖目录，当前包含 Bullet3 仿真引擎等第三方模块。
@@ -211,7 +214,17 @@ python3 simulation/scripts/pybullet_apf_scene.py --headless
 python3 simulation/scripts/pybullet_apf_scene.py
 ```
 
-详细的环境配置、协议定义、系统设计和测试结果见
-[environment_setup.md](docs/environment_setup.md)、[communication_protocol.md](docs/communication_protocol.md)、
-[system_design.md](docs/system_design.md)、[artificial_potential_field.md](docs/artificial_potential_field.md) 和
-[test_report.md](docs/test_report.md)。
+
+
+## 8.更新日志
+
+- v1.7 增加工业搬运任务全流程闭环仿真（结果见[系统测试文档](docs/system_test_report.md)）：作业流程按"原点 -> 抓取点 -> 避障点… -> 放置点 -> 回原点"组织，作业点序列可按场景任意加长（脚本的 `path` 字段，S1～S3 为 4 段、S4 为 5 段），配置 4 组不同起点、终点与障碍物位置的场景（其中 S4 为两个障碍分处路径上下两侧、搬运路径在水平面内呈平放 S 型的绕行场景），在 QEMU 固件 + PyBullet 闭环下执行 12 次全流程循环，验证功能完整性与运行稳定性；新增 `SET_OBSTACLES` 命令，由主机下发场景障碍物列表，使固件 APF 与仿真环境使用同一组障碍物。演示采用"先录制、再快速回放"：`--record` 把固件逐周期输出存成 `simulation/scenes/pick_place_demo.json`，`--replay` 脱离 QEMU 播放，界面同屏显示通信状态、位置反馈和 APF 避让量；实际轨迹按作业段着色绘制并带地面投影，两个障碍用不同颜色、地板轮廓和名称标签区分，视角可用 `--view` 在侧上方俯视/近俯视/低角度侧视之间切换。
+- v1.6 增加静态工业场景和[人工势场避障](docs/artificial_potential_field.md)：固件在笛卡尔轨迹更新前修正末端目标，PyBullet 加载共享长方体障碍物并验证反馈、碰撞和轨迹显示。
+- 另：现在启动仿真时初始化/创建队列任务QEMU有概率响应超时，该问题目前无法稳定复现，新增测试文件，测试独立QEMU冷启动、握手、双关节MOTION，推测为windows11环境下virtualbox UBUNTU 22.04下QEMU本身环境不稳定导致
+- v1.5 扩展通信协议，新增笛卡尔直线/圆弧命令；路径任务规划后由 PID 任务周期调用 IK，并将关节目标接入速度执行器和 STATUS 错误反馈。
+- 使用Robotics Toolbox生成512组覆盖各项区间的测试用例，精度对比见[运动学测试文档](docs/kinematics_test_report.md)
+- v1.4 完成 [FreeRTOS 多任务架构](docs/freertos_task_architecture.md)：拆分通信、路径、PID 和状态检测任务，增加运动命令队列、状态邮箱和健康统计；[PID 任务](docs/joint_pid.md)由 SysTick ISR 通过任务通知以 100 Hz 唤醒；新增了untiy单元测试用例，完成 UR5 FK/IK、[关节/笛卡尔轨迹](docs/cartesian_trajectory.md)、增量式 PID、PyBullet 整定及 34 项 native/ARM/QEMU Unity 回归。
+- v1.3 明确协议错误与应用业务错误的边界，新增应用参数非法、控制状态非法和关节限位响应码；Unity 驱动测试扩展为 native 与 ARM/QEMU 两条执行路径，16 个用例在两种环境均通过；补充[通信协议](docs/communication_protocol.md)、[环境依赖](docs/environment_setup.md)和[系统测试文档](docs/system_test_report.md)。
+- v1.2 六路关节实例化，[驱动抽象](firmware/drivers/joint_motor.c)，新增QEMU[仿真串口驱动](firmware/bsp/qemu_uart.c)，完成Python客户端到QEMU仿真到FreeRTOS固件的串口通信链路，新增[Python CLI](simulation/scripts/robot_cli.py)，直接连接到固件，并通过指令实现机器人运动（Pybullet可视化已实现），支持通信帧实时返回机器人状态；接入unity测试框架，设计包含UART，协议解析，电机驱动接口编写覆盖正常功能，边界参数异常等共16个单元测试用例，测试全部通过，具体[系统测试文档](docs/system_test_report.md)；初步推导UR5 DH参数，坐标体系变换方法，运动学，八解等，具体查看[docs/kinematics.md](docs/kinematics.md)
+- v1.1 更新[技术文档](docs/system_design.md)明确各层功能边界，接口定义，I/O约束和返回值，明确通信层数据结构，返回的错误码；增加了多任务调度验证[代码](firmware/app/scheduler_validation.c)；实现了python到仿真端的双向通信验证[代码](firmware/tests/communication_link_host.c)
+- v1.0 基础的环境配置和仿真实现，编写技术文档，设计通信协议，驱动抽象。

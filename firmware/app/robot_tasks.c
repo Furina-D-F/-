@@ -14,9 +14,9 @@
 #define ROBOT_PATH_TASK_PRIORITY 3U
 #define ROBOT_PID_TASK_PRIORITY 2U
 #define ROBOT_STATUS_TASK_PRIORITY 1U
-#define ROBOT_PATH_TASK_STACK 384U
-#define ROBOT_PID_TASK_STACK 384U
-#define ROBOT_STATUS_TASK_STACK 256U
+#define ROBOT_PATH_TASK_STACK 1024U
+#define ROBOT_PID_TASK_STACK 2048U
+#define ROBOT_STATUS_TASK_STACK 384U
 #define ROBOT_PATH_QUEUE_LENGTH 4U
 #define ROBOT_STATUS_QUEUE_LENGTH 1U
 #define ROBOT_CONTROL_PERIOD_TICKS pdMS_TO_TICKS(10U)
@@ -28,6 +28,7 @@ static QueueHandle_t path_queue;
 static QueueHandle_t status_queue;
 static SemaphoreHandle_t health_mutex;
 static SemaphoreHandle_t trajectory_mutex;
+static SemaphoreHandle_t path_completion;
 static TaskHandle_t pid_task_handle;
 static robot_tasks_health_t health;
 static robot_trajectory_trapezoid_t active_trajectory;
@@ -36,6 +37,17 @@ static robot_joint_pid_t joint_pid[ROBOT_CONTROL_JOINT_COUNT];
 static float trajectory_time_s;
 static int trajectory_active;
 static uint8_t trajectory_kind;
+
+static float feedforward_target[ROBOT_CONTROL_JOINT_COUNT];
+
+static void reset_feedforward(const float start_joint[ROBOT_CONTROL_JOINT_COUNT])
+{
+    if (start_joint != 0) {
+        for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
+            feedforward_target[index] = start_joint[index];
+        }
+    }
+}
 
 static const robot_apf_obstacle_t industrial_obstacles[] = {
     {
@@ -46,6 +58,49 @@ static const robot_apf_obstacle_t industrial_obstacles[] = {
         .repulsive_gain = 0.02f
     }
 };
+
+static robot_apf_obstacle_t scenario_obstacles[ROBOT_APF_MAX_OBSTACLES];
+static uint8_t scenario_obstacle_count;
+static uint8_t scenario_obstacles_valid;
+
+static int obstacle_is_valid(const robot_apf_obstacle_t *obstacle)
+{
+    for (uint8_t axis = 0U; axis < 3U; axis++) {
+        if (!isfinite(obstacle->minimum[axis])
+            || !isfinite(obstacle->maximum[axis])
+            || obstacle->minimum[axis] >= obstacle->maximum[axis]) {
+            return 0;
+        }
+    }
+    return isfinite(obstacle->clearance_m) && obstacle->clearance_m >= 0.0f
+        && isfinite(obstacle->influence_radius)
+        && obstacle->influence_radius > 0.0f
+        && isfinite(obstacle->repulsive_gain)
+        && obstacle->repulsive_gain > 0.0f;
+}
+
+robot_tasks_status_t robot_tasks_set_obstacles(
+    const robot_apf_obstacle_t *obstacles,
+    uint8_t count
+)
+{
+    if (count > ROBOT_APF_MAX_OBSTACLES || (count > 0U && obstacles == 0)) {
+        return ROBOT_TASKS_INVALID_ARGUMENT;
+    }
+    for (uint8_t index = 0U; index < count; index++) {
+        if (obstacle_is_valid(&obstacles[index]) == 0) {
+            return ROBOT_TASKS_INVALID_ARGUMENT;
+        }
+    }
+    (void) xSemaphoreTake(trajectory_mutex, portMAX_DELAY);
+    for (uint8_t index = 0U; index < count; index++) {
+        scenario_obstacles[index] = obstacles[index];
+    }
+    scenario_obstacle_count = count;
+    scenario_obstacles_valid = 1U;
+    (void) xSemaphoreGive(trajectory_mutex);
+    return ROBOT_TASKS_OK;
+}
 
 static const robot_pid_config_t pid_config = {
     .kp = 2.5f,
@@ -102,6 +157,7 @@ static void path_planning_task(void *argument)
                         trajectory_time_s = 0.0f;
                         trajectory_active = 1;
                         trajectory_kind = ROBOT_TRAJECTORY_JOINT;
+                        reset_feedforward(status.position_rad);
                     }
                 } else {
                     control_result = ROBOT_APP_INVALID_ARGUMENT;
@@ -119,14 +175,20 @@ static void path_planning_task(void *argument)
                         command.period_s);
                 }
                 if (cartesian_result == ROBOT_CARTESIAN_OK) {
-                    (void) robot_cartesian_set_obstacles(&active_cartesian,
-                        industrial_obstacles,
-                        (uint8_t) (sizeof(industrial_obstacles)
-                            / sizeof(industrial_obstacles[0])));
+                    if (scenario_obstacles_valid != 0U) {
+                        (void) robot_cartesian_set_obstacles(&active_cartesian,
+                            scenario_obstacles, scenario_obstacle_count);
+                    } else {
+                        (void) robot_cartesian_set_obstacles(&active_cartesian,
+                            industrial_obstacles,
+                            (uint8_t) (sizeof(industrial_obstacles)
+                                / sizeof(industrial_obstacles[0])));
+                    }
                     control_result = robot_control_start_velocity_control();
                     if (control_result == ROBOT_APP_OK) {
                         trajectory_active = 1;
                         trajectory_kind = ROBOT_TRAJECTORY_CARTESIAN;
+                        reset_feedforward(status.position_rad);
                     } else {
                         robot_cartesian_stop(&active_cartesian);
                     }
@@ -143,22 +205,23 @@ static void path_planning_task(void *argument)
                 }
             }
             increment_health(&health.path_commands);
+#ifdef ROBOT_QEMU_EXTERNAL_PLANT
+            (void) xSemaphoreGive(path_completion);
+#endif
         }
     }
 }
 
-static void pid_control_task(void *argument)
+void robot_tasks_run_simulation_cycle(void)
 {
     robot_control_status_t snapshot;
 
-    (void) argument;
-    for (;;) {
-        (void) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        robot_cartesian_status_t cartesian_result = ROBOT_CARTESIAN_OK;
-        (void) xSemaphoreTake(trajectory_mutex, portMAX_DELAY);
-        if (trajectory_active != 0) {
+    robot_cartesian_status_t cartesian_result = ROBOT_CARTESIAN_OK;
+    (void) xSemaphoreTake(trajectory_mutex, portMAX_DELAY);
+    if (trajectory_active != 0) {
             robot_trajectory_point_t point;
             robot_control_status_t status;
+            float feedforward[ROBOT_CONTROL_JOINT_COUNT];
 
             robot_control_get_status(&status);
             if (trajectory_kind == ROBOT_TRAJECTORY_CARTESIAN) {
@@ -167,6 +230,11 @@ static void pid_control_task(void *argument)
                     0.01f, target);
                 for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
                     point.position[index] = target[index];
+                }
+
+                for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
+                    feedforward[index] = (point.position[index]
+                        - feedforward_target[index]) / 0.01f;
                 }
                 if (cartesian_result == ROBOT_CARTESIAN_COMPLETE) {
                     trajectory_active = 0;
@@ -178,13 +246,22 @@ static void pid_control_task(void *argument)
             } else {
                 (void) robot_trajectory_sample_trapezoid(
                     &active_trajectory, trajectory_time_s, &point);
+                for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
+                    feedforward[index] = point.velocity[index];
+                }
+            }
+            for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
+                feedforward_target[index] = point.position[index];
             }
             if (cartesian_result != ROBOT_CARTESIAN_IK_FAILED) {
                 for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
                     float velocity_command;
+                    float predicted = status.position_rad[index]
+                        + feedforward[index] * 0.01f;
                     if (robot_joint_pid_update(&joint_pid[index], point.position[index],
-                        status.position_rad[index], &velocity_command) == ROBOT_PID_OK) {
-                        (void) robot_control_set_velocity_command(index, velocity_command);
+                        predicted, &velocity_command) == ROBOT_PID_OK) {
+                        (void) robot_control_set_velocity_command(index,
+                            velocity_command + feedforward[index]);
                     }
                 }
                 robot_control_update_velocity_control(0.01f);
@@ -207,18 +284,46 @@ static void pid_control_task(void *argument)
                 trajectory_active = 0;
                 trajectory_kind = ROBOT_TRAJECTORY_NONE;
             }
-        } else {
-            robot_control_update(0.01f);
+    } else {
+#ifdef ROBOT_QEMU_EXTERNAL_PLANT
+        robot_control_status_t hold_status;
+        robot_joint_state_t joint_state;
+
+        robot_control_get_status(&hold_status);
+        if (hold_status.state == ROBOT_CONTROL_RUNNING) {
+            for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
+                float velocity_command;
+                if (robot_joint_get_state(index, &joint_state) != ROBOT_JOINT_OK) {
+                    continue;
+                }
+                if (robot_joint_pid_update(&joint_pid[index],
+                        joint_state.target_position_rad,
+                        hold_status.position_rad[index],
+                        &velocity_command) == ROBOT_PID_OK) {
+                    (void) robot_control_set_velocity_command(index, velocity_command);
+                }
+            }
         }
-        (void) xSemaphoreGive(trajectory_mutex);
-        if (trajectory_active == 0 && cartesian_result == ROBOT_CARTESIAN_IK_FAILED) {
-            robot_control_report_error(ROBOT_APP_INVALID_ARGUMENT);
-        }
-        robot_control_get_status(&snapshot);
-        if (status_queue != NULL) {
-            (void) xQueueOverwrite(status_queue, &snapshot);
-        }
-        increment_health(&health.pid_cycles);
+#endif
+        robot_control_update(0.01f);
+    }
+    (void) xSemaphoreGive(trajectory_mutex);
+    if (trajectory_active == 0 && cartesian_result == ROBOT_CARTESIAN_IK_FAILED) {
+        robot_control_report_error(ROBOT_APP_INVALID_ARGUMENT);
+    }
+    robot_control_get_status(&snapshot);
+    if (status_queue != NULL) {
+        (void) xQueueOverwrite(status_queue, &snapshot);
+    }
+    increment_health(&health.pid_cycles);
+}
+
+static void pid_control_task(void *argument)
+{
+    (void) argument;
+    for (;;) {
+        (void) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        robot_tasks_run_simulation_cycle();
     }
 }
 
@@ -227,6 +332,11 @@ void robot_tasks_tick_isr(void)
     static uint32_t tick_divider;
     BaseType_t higher_priority_task_woken = pdFALSE;
 
+#ifdef ROBOT_QEMU_EXTERNAL_PLANT
+    if (robot_joint_simulation_feedback_active() != 0) {
+        return;
+    }
+#endif
     tick_divider++;
     if (tick_divider < ROBOT_CONTROL_PERIOD_TICKS) {
         return;
@@ -267,8 +377,9 @@ robot_tasks_status_t robot_tasks_start(void)
         sizeof(robot_control_status_t));
     health_mutex = xSemaphoreCreateMutex();
     trajectory_mutex = xSemaphoreCreateMutex();
+    path_completion = xSemaphoreCreateBinary();
     if (path_queue == NULL || status_queue == NULL || health_mutex == NULL
-        || trajectory_mutex == NULL) {
+        || trajectory_mutex == NULL || path_completion == NULL) {
         return ROBOT_TASKS_CREATE_FAILED;
     }
     health.pid_cycles = 0U;
@@ -323,8 +434,15 @@ robot_tasks_status_t robot_tasks_submit_cartesian(const robot_path_command_t *co
             && command->type != ROBOT_PATH_CARTESIAN_ARC)) {
         return ROBOT_TASKS_INVALID_ARGUMENT;
     }
-    return xQueueSend(path_queue, command, 0U) == pdPASS
-        ? ROBOT_TASKS_OK : ROBOT_TASKS_QUEUE_FULL;
+    if (xQueueSend(path_queue, command, 0U) != pdPASS) {
+        return ROBOT_TASKS_QUEUE_FULL;
+    }
+#ifdef ROBOT_QEMU_EXTERNAL_PLANT
+    if (xSemaphoreTake(path_completion, pdMS_TO_TICKS(1000U)) != pdPASS) {
+        return ROBOT_TASKS_QUEUE_FULL;
+    }
+#endif
+    return ROBOT_TASKS_OK;
 }
 
 void robot_tasks_get_health(robot_tasks_health_t *output)

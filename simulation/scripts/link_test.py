@@ -17,6 +17,7 @@ def start_firmware_bridge():
     project_root = pathlib.Path(__file__).resolve().parents[2]
     source_files = [
         project_root / "firmware" / "tests" / "communication_link_host.c",
+        project_root / "firmware" / "tests" / "robot_tasks_stub.c",
         project_root / "firmware" / "app" / "control.c",
         project_root / "firmware" / "drivers" / "communication.c",
         project_root / "firmware" / "drivers" / "joint_motor.c",
@@ -32,7 +33,7 @@ def start_firmware_bridge():
         executable = pathlib.Path(directory) / "communication_link_host"
         subprocess.run(
             ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-             *include_flags, *map(str, source_files), "-o", str(executable)],
+             *include_flags, *map(str, source_files), "-lm", "-o", str(executable)],
             cwd=project_root,
             check=True,
         )

@@ -9,6 +9,7 @@
 
 #define ROBOT_MOTION_MODE_POSITION 0U
 #define ROBOT_MOTION_MODE_STOP 1U
+#define ROBOT_JOINT_VELOCITY_LIMIT_RAD_S 3.14159265358979323846f
 
 static const float joint_min[ROBOT_CONTROL_JOINT_COUNT] = {
     -6.283185307f, -6.283185307f, -3.141592654f,
@@ -104,6 +105,11 @@ robot_app_result_t robot_control_handle_motion(const motion_command_t *command)
         control_status.error_code = ROBOT_APP_INVALID_ARGUMENT;
         control_unlock();
         return ROBOT_APP_INVALID_ARGUMENT;
+    }
+    if (command->max_velocity_rad_s > ROBOT_JOINT_VELOCITY_LIMIT_RAD_S) {
+        control_status.error_code = ROBOT_APP_LIMIT;
+        control_unlock();
+        return ROBOT_APP_LIMIT;
     }
 
     for (uint32_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
@@ -214,6 +220,38 @@ void robot_control_update_velocity_control(float dt_s)
             control_status.position_rad[index] = joint_state.position_rad;
             control_status.velocity_rad_s[index] = joint_state.velocity_rad_s;
         }
+    }
+    control_unlock();
+}
+
+void robot_control_set_simulation_feedback(
+    const float position_rad[ROBOT_CONTROL_JOINT_COUNT],
+    const float velocity_rad_s[ROBOT_CONTROL_JOINT_COUNT]
+)
+{
+    if (position_rad == 0 || velocity_rad_s == 0) {
+        return;
+    }
+    control_lock();
+    for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
+        robot_joint_simulation_set_feedback(index, position_rad[index],
+            velocity_rad_s[index]);
+        control_status.position_rad[index] = position_rad[index];
+        control_status.velocity_rad_s[index] = velocity_rad_s[index];
+    }
+    control_unlock();
+}
+
+void robot_control_get_velocity_commands(
+    float velocity_rad_s[ROBOT_CONTROL_JOINT_COUNT]
+)
+{
+    if (velocity_rad_s == 0) {
+        return;
+    }
+    control_lock();
+    for (uint8_t index = 0U; index < ROBOT_CONTROL_JOINT_COUNT; index++) {
+        velocity_rad_s[index] = robot_joint_get_velocity_command(index);
     }
     control_unlock();
 }

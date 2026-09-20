@@ -17,7 +17,7 @@
 
 #define configSUPPORT_STATIC_ALLOCATION             0
 #define configSUPPORT_DYNAMIC_ALLOCATION            1
-#define configTOTAL_HEAP_SIZE                       ( 24 * 1024 )
+#define configTOTAL_HEAP_SIZE                       ( 64 * 1024 )
 
 #define configKERNEL_INTERRUPT_PRIORITY             255
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY        0x80
@@ -31,7 +31,7 @@
         }                                           \
     } while ( 0 )
 
-#define configCHECK_FOR_STACK_OVERFLOW              0
+#define configCHECK_FOR_STACK_OVERFLOW              2
 #define configCHECK_HANDLER_INSTALLATION            0
 #define configUSE_MUTEXES                            1
 #define configUSE_RECURSIVE_MUTEXES                  1
@@ -45,7 +45,7 @@
 #define configGENERATE_RUN_TIME_STATS                0
 #define configUSE_IDLE_HOOK                           0
 #define configUSE_TICK_HOOK                           1
-#define configUSE_MALLOC_FAILED_HOOK                  0
+#define configUSE_MALLOC_FAILED_HOOK                  1
 
 #define INCLUDE_vTaskDelay                            1
 #define INCLUDE_vTaskDelayUntil                       1

@@ -98,7 +98,7 @@ static int queue_frame(robot_communication_t *communication, const robot_frame_t
     }
 
 #ifdef ROBOT_QEMU
-    bsp_qemu_uart_enable_tx_irq();
+    bsp_qemu_uart_flush_tx();
 #endif
 
     return length;
@@ -122,6 +122,8 @@ static void send_response(
     if (payload != 0 && payload_length <= ROBOT_PROTOCOL_MAX_PAYLOAD) {
         copy_bytes(response.payload, payload, payload_length);
     }
+    communication->last_response = response;
+    communication->has_last_response = 1U;
     (void) queue_frame(communication, &response);
 }
 
@@ -191,6 +193,58 @@ static void handle_frame(robot_communication_t *communication, const robot_frame
         }
         robot_tasks_status_t task_result = robot_tasks_submit_cartesian(&command);
         send_response(communication, frame, task_status_to_response(task_result), 0, 0U);
+    } else if (frame->command == ROBOT_CMD_SET_OBSTACLES) {
+        robot_apf_obstacle_t obstacles[ROBOT_APF_MAX_OBSTACLES];
+        uint8_t count;
+        uint16_t expected_length;
+
+        if (frame->payload_length < 1U) {
+            send_response(communication, frame, ROBOT_STATUS_BAD_LENGTH, 0, 0U);
+            return;
+        }
+        count = frame->payload[0U];
+        if (count > ROBOT_APF_MAX_OBSTACLES) {
+            send_response(communication, frame, ROBOT_STATUS_INVALID_ARGUMENT, 0, 0U);
+            return;
+        }
+        expected_length = (uint16_t) (1U
+            + (uint16_t) count * ROBOT_PROTOCOL_OBSTACLE_BYTES);
+        if (frame->payload_length != expected_length) {
+            send_response(communication, frame, ROBOT_STATUS_BAD_LENGTH, 0, 0U);
+            return;
+        }
+        for (uint8_t index = 0U; index < count; index++) {
+            const uint8_t *base = &frame->payload[
+                1U + (uint16_t) index * ROBOT_PROTOCOL_OBSTACLE_BYTES];
+            copy_bytes((uint8_t *) obstacles[index].minimum, &base[0U], 12U);
+            copy_bytes((uint8_t *) obstacles[index].maximum, &base[12U], 12U);
+            copy_bytes((uint8_t *) &obstacles[index].clearance_m, &base[24U], 4U);
+            copy_bytes((uint8_t *) &obstacles[index].influence_radius,
+                &base[28U], 4U);
+            copy_bytes((uint8_t *) &obstacles[index].repulsive_gain,
+                &base[32U], 4U);
+        }
+        if (robot_tasks_set_obstacles(obstacles, count) != ROBOT_TASKS_OK) {
+            send_response(communication, frame, ROBOT_STATUS_INVALID_ARGUMENT, 0, 0U);
+            return;
+        }
+        send_response(communication, frame, ROBOT_STATUS_OK, 0, 0U);
+    } else if (frame->command == ROBOT_CMD_SIMULATION_STEP) {
+        float position[6];
+        float velocity[6];
+        float command_velocity[6];
+        uint8_t response_payload[24];
+        if (frame->payload_length != 48U) {
+            send_response(communication, frame, ROBOT_STATUS_BAD_LENGTH, 0, 0U);
+            return;
+        }
+        copy_bytes((uint8_t *) position, &frame->payload[0], 24U);
+        copy_bytes((uint8_t *) velocity, &frame->payload[24], 24U);
+        robot_control_set_simulation_feedback(position, velocity);
+        robot_tasks_run_simulation_cycle();
+        robot_control_get_velocity_commands(command_velocity);
+        copy_bytes(response_payload, (const uint8_t *) command_velocity, 24U);
+        send_response(communication, frame, ROBOT_STATUS_OK, response_payload, 24U);
     } else {
         send_response(communication, frame, ROBOT_STATUS_BAD_COMMAND, 0, 0U);
         return;
@@ -211,6 +265,7 @@ void robot_communication_init(
     communication->rx_errors = 0U;
     communication->duplicate_frames = 0U;
     communication->handled_frames = 0U;
+    communication->has_last_response = 0U;
     robot_protocol_parser_init(&communication->parser);
     robot_uart_init(rx);
     robot_uart_tx_init(tx);
@@ -230,7 +285,13 @@ void robot_communication_poll(robot_communication_t *communication, uint32_t tic
             handle_frame(communication, &frame);
         } else if (result == ROBOT_PROTOCOL_DUPLICATE) {
             communication->duplicate_frames++;
-            send_response(communication, &frame, ROBOT_STATUS_DUPLICATE, 0, 0U);
+            if (communication->has_last_response != 0U
+                && communication->last_response.sequence == frame.sequence
+                && communication->last_response.command == frame.command) {
+                (void) queue_frame(communication, &communication->last_response);
+            } else {
+                send_response(communication, &frame, ROBOT_STATUS_DUPLICATE, 0, 0U);
+            }
         } else if (result < 0) {
             communication->rx_errors++;
         }
@@ -242,35 +303,6 @@ void robot_communication_poll(robot_communication_t *communication, uint32_t tic
         communication->rx_errors++;
     }
     communication->last_tick = tick;
-}
-
-int robot_communication_send_status(
-    robot_communication_t *communication,
-    uint8_t sequence,
-    uint32_t task_counter,
-    uint32_t timer_counter
-)
-{
-    robot_control_status_t control_status;
-    robot_frame_t status = {
-        .type = ROBOT_FRAME_STATUS,
-        .sequence = sequence,
-        .command = ROBOT_CMD_STATUS,
-        .response_code = ROBOT_STATUS_OK,
-        .payload_length = 58U
-    };
-
-    status.payload[0] = (uint8_t) task_counter;
-    status.payload[1] = (uint8_t) (task_counter >> 8U);
-    status.payload[2] = (uint8_t) (task_counter >> 16U);
-    status.payload[3] = (uint8_t) (task_counter >> 24U);
-    status.payload[4] = (uint8_t) timer_counter;
-    status.payload[5] = (uint8_t) (timer_counter >> 8U);
-    status.payload[6] = (uint8_t) (timer_counter >> 16U);
-    status.payload[7] = (uint8_t) (timer_counter >> 24U);
-    robot_control_get_status(&control_status);
-    (void) append_status_payload(&status.payload[8], &control_status);
-    return queue_frame(communication, &status);
 }
 
 void robot_communication_task(void *argument)

@@ -20,7 +20,6 @@
 #define CORTEX_M_NVIC_ISER0 (*(volatile uint32_t *) 0xE000E100UL)
 #define QEMU_UART_RX_IRQ_NUMBER 0U
 #define QEMU_UART_TX_IRQ_NUMBER 1U
-#define QEMU_UART_COMBINED_IRQ_NUMBER 12U
 
 static robot_uart_rx_ring_t *uart_rx;
 static robot_uart_tx_ring_t *uart_tx;
@@ -33,12 +32,14 @@ void bsp_qemu_uart_init(robot_uart_rx_ring_t *rx, robot_uart_tx_ring_t *tx)
     QEMU_UART_BAUDDIV = 173U;
     QEMU_UART_CTRL = QEMU_UART_CTRL_TXEN | QEMU_UART_CTRL_RXEN
         | (rx != 0 ? QEMU_UART_CTRL_RXIRQEN : 0U);
+    CORTEX_M_NVIC_ISER0 = 1UL << QEMU_UART_RX_IRQ_NUMBER;
 }
 
-void bsp_qemu_uart_enable_tx_irq(void)
+void bsp_qemu_uart_flush_tx(void)
 {
-    /* QEMU CMSDK UART is serviced by the communication task for TX. */
+
     QEMU_UART_CTRL &= ~QEMU_UART_CTRL_TXIRQEN;
+    bsp_qemu_uart_service();
 }
 
 void bsp_qemu_uart_irq_handler(void)

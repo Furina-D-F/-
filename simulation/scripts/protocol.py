@@ -17,6 +17,8 @@ CMD_CONFIG = 0x02
 CMD_STATUS = 0x03
 CMD_CARTESIAN_LINE = 0x04
 CMD_CARTESIAN_ARC = 0x05
+CMD_SIMULATION_STEP = 0x06
+CMD_SET_OBSTACLES = 0x07
 
 STATUS_OK = 0x00
 STATUS_BAD_LENGTH = 0x01
@@ -67,6 +69,16 @@ def cartesian_arc_payload(start_pose, end_pose, center_pose, direction: int,
     return (cartesian_pose(*start_pose) + cartesian_pose(*end_pose)
             + cartesian_pose(*center_pose) + struct.pack(
                 "<B2f", direction, duration_s, period_s))
+
+
+def obstacles_payload(obstacles) -> bytes:
+    """障碍物下发负载：数量 + 每项 AABB 最小/最大与三个 APF 参数。"""
+    payload = struct.pack("<B", len(obstacles))
+    for obstacle in obstacles:
+        payload += struct.pack("<6f3f", *obstacle["minimum"],
+                               *obstacle["maximum"], obstacle["clearance"],
+                               obstacle["influence"], obstacle["gain"])
+    return payload
 
 
 class FrameParser:
